@@ -38,7 +38,7 @@ function remove_arg(index: number): void {
 
 <template>
   <div class="flex flex-col gap-4">
-    <FormField label="传输方式" hint="决定这次采集或执行如何与设备通信">
+    <FormField label="传输方式">
       <ChoicePicker v-model="transport.type" :options="TRANSPORT_CHOICES" />
     </FormField>
 
