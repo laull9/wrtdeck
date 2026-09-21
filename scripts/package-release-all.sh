@@ -29,21 +29,21 @@ log_info release "开始打包 WrtDeck v${version} 全部架构资产"
 build_web release
 
 # 架构对应关系：goarch:pkg_arch
-architectures=(
-  "arm64:aarch64_cortex-a53"
-  "amd64:x86_64"
-  "arm:arm_cortex-a7"
-  "mipsle:mipsel_24kc"
-  "mips:mips_24kc"
-)
+architectures="
+arm64:aarch64_cortex-a53
+amd64:x86_64
+arm:arm_cortex-a7
+mipsle:mipsel_24kc
+mips:mips_24kc
+"
 
 mkdir -p "$root/dist"
 
 # 打包单个架构的独立二进制、ipk 和 apk
 pack_single_arch() {
-  local arch_pair="$1"
-  local go_arch="${arch_pair%%:*}"
-  local openwrt_arch="${arch_pair##*:}"
+  arch_pair="$1"
+  go_arch="${arch_pair%%:*}"
+  openwrt_arch="${arch_pair##*:}"
 
   log_info release "处理架构: ${go_arch} (${openwrt_arch})"
 
@@ -65,7 +65,7 @@ pack_single_arch() {
   fi
 }
 
-for item in "${architectures[@]}"; do
+for item in $architectures; do
   pack_single_arch "$item"
 done
 
@@ -81,20 +81,10 @@ log_info release "生成 sha256sums.txt 校验清单"
 (
   cd "$root/dist"
   rm -f sha256sums.txt
-  # 收集发布包、二进制与公钥
-  files=()
-  for pattern in "wrtdeck-*.apk" "wrtdeck_*.ipk" "wrtdeck-linux-*" "luci-app-wrtdeck-*.apk" "luci-app-wrtdeck_*.ipk" "wrtdeck-local.rsa.pub"; do
-    for f in $pattern; do
-      if [ -f "$f" ]; then
-        files+=("$f")
-      fi
-    done
-  done
-
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "${files[@]}" > sha256sums.txt
+    sha256sum wrtdeck-*.apk wrtdeck_*.ipk wrtdeck-linux-* luci-app-wrtdeck-*.apk luci-app-wrtdeck_*.ipk wrtdeck-local.rsa.pub > sha256sums.txt 2>/dev/null || true
   else
-    shasum -a 256 "${files[@]}" > sha256sums.txt
+    shasum -a 256 wrtdeck-*.apk wrtdeck_*.ipk wrtdeck-linux-* luci-app-wrtdeck-*.apk luci-app-wrtdeck_*.ipk wrtdeck-local.rsa.pub > sha256sums.txt 2>/dev/null || true
   fi
 )
 
