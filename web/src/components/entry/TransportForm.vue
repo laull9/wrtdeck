@@ -6,7 +6,7 @@ import {
   HTTP_METHODS,
   TRANSPORT_CHOICES,
   type TransportDraft,
-} from '../../lib/entry_form'
+} from '../../lib/entry_model'
 
 // 传输配置表单：只渲染当前传输类型需要的字段，切换类型时其他分支的填写内容会保留
 // transport 是父级草稿上的响应式对象，这里直接改它的字段来触发父级更新

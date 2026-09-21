@@ -20,10 +20,9 @@ import {
   VARIANT_CHOICES,
   draft_from_entry,
   empty_draft,
-  entry_from_draft,
-  issue_map,
-  validate_draft,
-} from '../../lib/entry_form'
+} from '../../lib/entry_model'
+import { entry_from_draft } from '../../lib/entry_convert'
+import { issue_map, validate_draft } from '../../lib/entry_validate'
 import ChoicePicker from './ChoicePicker.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'

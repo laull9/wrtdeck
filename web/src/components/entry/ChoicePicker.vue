@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Choice } from '../../lib/entry_form'
+import type { Choice } from '../../lib/entry_model'
 
 // 选项卡片组：代替普通下拉框，让每个选项的行为在界面上直接可读
 const props = defineProps<{

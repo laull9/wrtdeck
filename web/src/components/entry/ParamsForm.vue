@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import FormField from './FormField.vue'
-import { PARAM_TYPE_CHOICES, type ParamDraft } from '../../lib/entry_form'
+import { PARAM_TYPE_CHOICES, type ParamDraft } from '../../lib/entry_model'
 import type { ParamType } from '../../types'
 
 // 运行参数编辑器：为动作声明触发时需要在界面上填写的参数
