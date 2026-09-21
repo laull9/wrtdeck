@@ -11,6 +11,8 @@ import (
 const (
 	StatusUnknown = "unknown"
 	StatusRunning = "running"
+	// StatusWaiting 表示订阅已经建立，正在等待 broker 推送第一条消息
+	StatusWaiting = "waiting"
 	StatusOK      = "ok"
 	StatusError   = "error"
 	StatusStale   = "stale"

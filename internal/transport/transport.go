@@ -28,6 +28,16 @@ type Options struct {
 	DefaultTimeout time.Duration
 	ExecEnabled    bool
 	ExecAllowlist  []string
+	// MQTT 是进程内共享的 broker 连接池，未初始化时 MQTT 传输不可用
+	MQTT *MQTTPool
+}
+
+// DefaultOptions 返回一份只填了安全默认值的传输约束，方便测试与独立调用
+func DefaultOptions() Options {
+	return Options{
+		MaxBodyBytes:   256 * 1024,
+		DefaultTimeout: 5 * time.Second,
+	}
 }
 
 // Result 是一次传输调用的产物

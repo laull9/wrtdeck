@@ -17,6 +17,9 @@ const (
 	default_max_request_bytes = 64 * 1024
 	default_timeout_ms        = 5000
 	default_history_limit     = 0
+	default_mqtt_keepalive_s  = 30
+	default_mqtt_connect_ms   = 5000
+	default_mqtt_reconnect_ms = 30000
 )
 
 // AuthConfig 控制 API 鉴权行为
@@ -46,6 +49,13 @@ type WorkerConfig struct {
 	Action int `json:"action,omitempty"`
 }
 
+// MQTTConfig 控制 MQTT 连接池的行为，同一个 broker 只维护一条长连接
+type MQTTConfig struct {
+	KeepaliveSeconds    int `json:"keepalive_seconds,omitempty"`
+	ConnectTimeoutMS    int `json:"connect_timeout_ms,omitempty"`
+	MaxReconnectDelayMS int `json:"max_reconnect_delay_ms,omitempty"`
+}
+
 // Config 是 daemon 的完整配置
 type Config struct {
 	Listen   string       `json:"listen"`
@@ -55,6 +65,7 @@ type Config struct {
 	Exec     ExecConfig   `json:"exec"`
 	Limits   LimitsConfig `json:"limits"`
 	Workers  WorkerConfig `json:"workers"`
+	MQTT     MQTTConfig   `json:"mqtt"`
 
 	path string
 }
@@ -70,6 +81,11 @@ func Default() *Config {
 			DefaultTimeoutMS: default_timeout_ms,
 			MinIntervalMS:    default_min_interval_ms,
 			HistoryLimit:     default_history_limit,
+		},
+		MQTT: MQTTConfig{
+			KeepaliveSeconds:    default_mqtt_keepalive_s,
+			ConnectTimeoutMS:    default_mqtt_connect_ms,
+			MaxReconnectDelayMS: default_mqtt_reconnect_ms,
 		},
 	}
 }
@@ -138,6 +154,15 @@ func (c *Config) normalize() {
 	}
 	if c.Limits.MinIntervalMS <= 0 {
 		c.Limits.MinIntervalMS = default_min_interval_ms
+	}
+	if c.MQTT.KeepaliveSeconds <= 0 {
+		c.MQTT.KeepaliveSeconds = default_mqtt_keepalive_s
+	}
+	if c.MQTT.ConnectTimeoutMS <= 0 {
+		c.MQTT.ConnectTimeoutMS = default_mqtt_connect_ms
+	}
+	if c.MQTT.MaxReconnectDelayMS <= 0 {
+		c.MQTT.MaxReconnectDelayMS = default_mqtt_reconnect_ms
 	}
 }
 

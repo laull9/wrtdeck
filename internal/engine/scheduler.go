@@ -32,6 +32,7 @@ type Scheduler struct {
 	store          *registry.Store
 	states         *state.Store
 	hub            *state.Hub
+	subs           *SubscriberManager
 	fallback_ms    int
 	min_interval   time.Duration
 	source_workers chan struct{}
@@ -65,6 +66,9 @@ func NewScheduler(exec *Executor, store *registry.Store, states *state.Store, hu
 	}
 }
 
+// SetSubscribers 注入订阅管理器，轮询与订阅在 Sync 时一并收敛
+func (s *Scheduler) SetSubscribers(m *SubscriberManager) { s.subs = m }
+
 // Start 启动调度器并按当前注册表建立轮询协程
 func (s *Scheduler) Start(parent context.Context) {
 	s.mu.Lock()
@@ -78,6 +82,10 @@ func (s *Scheduler) Start(parent context.Context) {
 
 // Stop 停止全部轮询协程并等待退出
 func (s *Scheduler) Stop() {
+	if s.subs != nil {
+		s.subs.Stop()
+	}
+
 	s.mu.Lock()
 	cancel := s.cancel
 	jobs := s.jobs
@@ -93,8 +101,18 @@ func (s *Scheduler) Stop() {
 	s.wg.Wait()
 }
 
-// Sync 让轮询协程集合与注册表保持一致，新增、变更、删除都会在此收敛
+// Sync 让轮询协程集合与注册表保持一致，新增、变更、删除都会在此收敛。
+// 订阅型信息源不参与轮询，交给订阅管理器处理。
 func (s *Scheduler) Sync() {
+	s.sync_jobs()
+	// 订阅收敛会做网络握手，放在锁外执行，避免阻塞调度器本身
+	if s.subs != nil {
+		s.subs.Sync()
+	}
+}
+
+// sync_jobs 收敛轮询协程集合
+func (s *Scheduler) sync_jobs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ctx == nil {
@@ -103,7 +121,7 @@ func (s *Scheduler) Sync() {
 
 	wanted := make(map[string]*registry.Entry)
 	for _, entry := range s.store.ListByKind(registry.KindSource) {
-		if entry.Enabled {
+		if entry.Enabled && !entry.Subscribes() {
 			wanted[entry.ID] = entry
 		}
 	}
@@ -196,6 +214,9 @@ func (s *Scheduler) janitor() {
 			return
 		case <-ticker.C:
 			s.sweep()
+			if s.subs != nil {
+				s.subs.Retry()
+			}
 		}
 	}
 }

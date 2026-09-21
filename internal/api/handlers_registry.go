@@ -8,6 +8,7 @@ import (
 
 	"owdash/internal/registry"
 	"owdash/internal/state"
+	"owdash/internal/transport"
 )
 
 // handle_registry_list 返回全部注册项
@@ -58,6 +59,7 @@ func (s *Server) handle_registry_delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.states.Delete(id)
+	s.history.Delete(id)
 	s.after_registry_change(id, "delete")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -129,7 +131,12 @@ func (s *Server) handle_source_refresh(w http.ResponseWriter, r *http.Request) {
 		write_error(w, http.StatusNotFound, "not_found", "注册项不存在")
 		return
 	}
-	if err := s.exec.RefreshSource(r.Context(), id); err != nil {
+	err := s.exec.RefreshSource(r.Context(), id)
+	if errors.Is(err, transport.ErrMQTTSubscribePush) {
+		write_error(w, http.StatusConflict, "push_source", err.Error())
+		return
+	}
+	if err != nil {
 		write_error(w, http.StatusBadRequest, "refresh_failed", err.Error())
 		return
 	}

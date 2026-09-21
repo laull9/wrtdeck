@@ -8,6 +8,7 @@ import (
 	"owdash/internal/engine"
 	"owdash/internal/registry"
 	"owdash/internal/state"
+	"owdash/internal/transport"
 )
 
 // Server 汇总 API 层需要的全部依赖
@@ -16,6 +17,8 @@ type Server struct {
 	store   *registry.Store
 	states  *state.Store
 	hub     *state.Hub
+	history *state.History
+	pool    *transport.MQTTPool
 	exec    *engine.Executor
 	sched   *engine.Scheduler
 	secrets *config.Secrets
@@ -27,13 +30,18 @@ type Server struct {
 
 // NewServer 创建 API 服务
 func NewServer(cfg *config.Config, store *registry.Store, states *state.Store, hub *state.Hub,
-	exec *engine.Executor, sched *engine.Scheduler, secrets *config.Secrets,
-	webui http.Handler, version string, dev bool) *Server {
+	history *state.History, pool *transport.MQTTPool, exec *engine.Executor, sched *engine.Scheduler,
+	secrets *config.Secrets, webui http.Handler, version string, dev bool) *Server {
+	if history == nil {
+		history = state.NewHistory(0)
+	}
 	return &Server{
 		cfg:     cfg,
 		store:   store,
 		states:  states,
 		hub:     hub,
+		history: history,
+		pool:    pool,
 		exec:    exec,
 		sched:   sched,
 		secrets: secrets,
@@ -55,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/registry/{id}", s.handle_registry_delete)
 	mux.HandleFunc("POST /api/v1/actions/{id}/run", s.handle_action_run)
 	mux.HandleFunc("POST /api/v1/sources/{id}/refresh", s.handle_source_refresh)
+	mux.HandleFunc("GET /api/v1/sources/{id}/history", s.handle_source_history)
 	mux.HandleFunc("GET /api/v1/events", s.handle_events)
 
 	mux.Handle("/", s.webui)

@@ -106,11 +106,12 @@ func validate_transport(e *Entry) error {
 			return fmt.Errorf("transport.udp.address 不能为空")
 		}
 	case TransportMQTT:
-		if t.MQTT == nil || strings.TrimSpace(t.MQTT.Broker) == "" {
-			return fmt.Errorf("transport.mqtt.broker 不能为空")
+		if err := ValidateMQTT(t.MQTT, e.Kind); err != nil {
+			return err
 		}
-		if strings.TrimSpace(t.MQTT.Topic) == "" {
-			return fmt.Errorf("transport.mqtt.topic 不能为空")
+		// 统一补全 scheme 与默认端口，避免每次执行都重复解析
+		if normalized, err := NormalizeBrokerURL(t.MQTT.Broker); err == nil {
+			t.MQTT.Broker = normalized
 		}
 	case TransportExec:
 		if t.Exec == nil || strings.TrimSpace(t.Exec.Executable) == "" {

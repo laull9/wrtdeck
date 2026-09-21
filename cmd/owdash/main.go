@@ -94,7 +94,7 @@ func run(opts options) error {
 		return fmt.Errorf("创建数据目录失败: %w", err)
 	}
 
-	secrets, err := config.LoadSecrets(cfg.SecretsPath())
+	secrets, err := config.LoadSecrets(cfg.SecretsPath(), cfg.Auth.TokenEnv)
 	if err != nil {
 		return err
 	}
@@ -114,24 +114,39 @@ func run(opts options) error {
 	}
 
 	states := state.NewStore()
+	history := state.NewHistory(cfg.Limits.HistoryLimit)
 	hub := state.NewHub()
 	defer hub.Close()
+
+	// MQTT 连接池按需建连，没有 MQTT 注册项时不会产生任何连接
+	pool := transport.NewMQTTPool(transport.MQTTOptions{
+		KeepaliveSeconds:  cfg.MQTT.KeepaliveSeconds,
+		ConnectTimeout:    time.Duration(cfg.MQTT.ConnectTimeoutMS) * time.Millisecond,
+		MaxReconnectDelay: time.Duration(cfg.MQTT.MaxReconnectDelayMS) * time.Millisecond,
+		MaxPayloadBytes:   cfg.Limits.MaxBodyBytes,
+	}, log.Default())
+	defer pool.Close()
 
 	exec_opts := transport.Options{
 		MaxBodyBytes:   cfg.Limits.MaxBodyBytes,
 		DefaultTimeout: time.Duration(cfg.Limits.DefaultTimeoutMS) * time.Millisecond,
 		ExecEnabled:    cfg.Exec.Enabled,
 		ExecAllowlist:  cfg.Exec.Allowlist,
+		MQTT:           pool,
 	}
-	exec := engine.NewExecutor(store, states, hub, secrets, exec_opts, cfg.Workers.Action)
+	exec := engine.NewExecutor(store, states, hub, history, secrets, exec_opts, cfg.Workers.Action)
 
 	root_ctx, stop_signals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop_signals()
 
+	subs := engine.NewSubscriberManager(exec, store, pool)
+	pool.SetConnectionWatcher(subs.OnConnectionChange)
+
 	sched := engine.NewScheduler(exec, store, states, hub,
 		cfg.Workers.Source, cfg.Limits.DefaultTimeoutMS, cfg.Limits.MinIntervalMS)
+	sched.SetSubscribers(subs)
 
-	server := api.NewServer(cfg, store, states, hub, exec, sched, secrets,
+	server := api.NewServer(cfg, store, states, hub, history, pool, exec, sched, secrets,
 		webui.Handler(), version, opts.dev)
 
 	http_server := &http.Server{
@@ -149,7 +164,7 @@ func run(opts options) error {
 	sched.Start(root_ctx)
 	defer sched.Stop()
 
-	banner(cfg, opts, secrets.Token())
+	banner(cfg, opts, secrets.Token(), secrets.FromEnv())
 
 	err_chan := make(chan error, 1)
 	go func() {
@@ -183,19 +198,29 @@ func seed_demo(store *registry.Store, cfg *config.Config) error {
 }
 
 // banner 打印启动信息与访问地址
-func banner(cfg *config.Config, opts options, token string) {
+func banner(cfg *config.Config, opts options, token string, from_env bool) {
 	log.Printf("WrtDeck %s 启动中", version)
 	log.Printf("监听地址: %s", cfg.Listen)
 	log.Printf("数据目录: %s", cfg.DataDir)
 	if cfg.Auth.Disabled {
 		log.Printf("鉴权状态: 已关闭（开发模式）")
+	} else if from_env {
+		log.Printf("鉴权状态: 已开启，Token 来自环境变量 %s", cfg.Auth.TokenEnv)
 	} else {
 		log.Printf("鉴权状态: 已开启，Token 见 %s", cfg.SecretsPath())
+	}
+	if cfg.Limits.HistoryLimit > 0 {
+		log.Printf("运行历史: 每个信息源保留 %d 条采样（仅内存）", cfg.Limits.HistoryLimit)
+	} else {
+		log.Printf("运行历史: 已关闭（limits.history_limit = 0）")
 	}
 	if opts.dev {
 		log.Printf("前端开发地址: http://127.0.0.1:5173")
 	}
 	log.Printf("可用传输: %v", transport.Names())
+	if !cfg.Exec.Enabled {
+		log.Printf("Exec 传输: 已禁用（默认关闭），启用需在配置中设置 exec.enabled")
+	}
 }
 
 // local_listen 在开发模式下把监听地址收敛到回环地址

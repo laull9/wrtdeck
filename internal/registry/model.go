@@ -1,5 +1,7 @@
 package registry
 
+import "strings"
+
 // 注册项类型
 const (
 	KindSource = "source"
@@ -69,16 +71,43 @@ type UDPSpec struct {
 	ExpectReply bool   `json:"expect_reply,omitempty"`
 }
 
+// MQTT 工作模式：动作通常发布，信息源通常订阅
+const (
+	MQTTModePublish   = "publish"
+	MQTTModeSubscribe = "subscribe"
+)
+
 // MQTTSpec 描述 MQTT 发布或订阅
 type MQTTSpec struct {
-	Broker   string `json:"broker"`
-	ClientID string `json:"client_id,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-	Topic    string `json:"topic"`
-	QoS      int    `json:"qos,omitempty"`
-	Retain   bool   `json:"retain,omitempty"`
-	Payload  string `json:"payload,omitempty"`
+	Broker    string `json:"broker"`
+	Mode      string `json:"mode,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+	Username  string `json:"username,omitempty"`
+	Password  string `json:"password,omitempty"`
+	Topic     string `json:"topic"`
+	QoS       int    `json:"qos,omitempty"`
+	Retain    bool   `json:"retain,omitempty"`
+	Payload   string `json:"payload,omitempty"`
+	Encoding  string `json:"encoding,omitempty"`
+	TimeoutMS int    `json:"timeout_ms,omitempty"`
+}
+
+// EffectiveMode 返回 MQTT 的实际工作模式，未声明时按发布处理
+func (m *MQTTSpec) EffectiveMode() string {
+	if m == nil || strings.TrimSpace(m.Mode) == "" {
+		return MQTTModePublish
+	}
+	return m.Mode
+}
+
+// IsSubscribe 判断这条 MQTT 配置是否走订阅推送
+func (m *MQTTSpec) IsSubscribe() bool {
+	return m.EffectiveMode() == MQTTModeSubscribe
+}
+
+// Subscribes 说明该注册项是否依赖 MQTT 订阅，调度器据此跳过轮询
+func (e *Entry) Subscribes() bool {
+	return e.Transport.Type == TransportMQTT && e.Transport.MQTT.IsSubscribe()
 }
 
 // ExecSpec 描述一次受限的本地程序调用
