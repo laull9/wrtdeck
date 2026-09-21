@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布版本 Tag（例如 v1.0.3）'
+        required: true
+        default: 'v1.0.3'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: 构建并发布 Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本号
+        id: vars
+        run: |
+          raw_tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${raw_tag#v}"
+          echo "tag=${raw_tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "构建目标 Tag: ${raw_tag}，版本号: ${version}"
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: 打包全部架构资产
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          make release-all
+
+      - name: 检查生成产物
+        run: |
+          ls -lh dist/
+          echo "--- sha256sums.txt ---"
+          cat dist/sha256sums.txt
+
+      - name: 生成发布说明
+        run: |
+          tag="${{ steps.vars.outputs.tag }}"
+          ver="${{ steps.vars.outputs.version }}"
+
+          cat << EOF > dist/RELEASE_NOTES.md
+          ## WrtDeck ${tag}
+
+          ### 快速安装
+
+          #### 1. 面板本体
+
+          **OpenWrt 25.12 及以上（apk 格式）：**
+          \`\`\`sh
+          apk update
+          apk add --allow-untrusted ./wrtdeck-${ver}-r1.apk
+          \`\`\`
+
+          **OpenWrt 24.10 及更早（ipk 格式）：**
+          \`\`\`sh
+          opkg update
+          opkg install ./wrtdeck_${ver}-1_aarch64_cortex-a53.ipk
+          \`\`\`
+
+          #### 2. LuCI 内嵌薄壳（可选）
+
+          先确认面板已安装，然后装入薄壳，即可在 LuCI 菜单「服务 → WrtDeck」中免密内嵌使用：
+          \`\`\`sh
+          # apk 设备
+          apk add --allow-untrusted ./luci-app-wrtdeck-${ver}-r1.apk
+
+          # ipk 设备
+          opkg install ./luci-app-wrtdeck_${ver}-1_all.ipk
+          \`\`\`
+
+          ### 支持架构
+
+          | 架构名 | 适用平台 | 面板 apk | 面板 ipk | 独立二进制 |
+          | :--- | :--- | :--- | :--- | :--- |
+          | **aarch64_cortex-a53** | ARM64 路由器（推荐） | \`wrtdeck-${ver}-r1.apk\` | \`wrtdeck_${ver}-1_aarch64_cortex-a53.ipk\` | \`wrtdeck-linux-arm64\` |
+          | **x86_64** | x86 软路由 / 虚拟机 | \`wrtdeck-${ver}-r1.x86_64.apk\` | \`wrtdeck_${ver}-1_x86_64.ipk\` | \`wrtdeck-linux-amd64\` |
+          | **arm_cortex-a7** | ARMv7 设备 | \`wrtdeck-${ver}-r1.arm_cortex-a7.apk\` | \`wrtdeck_${ver}-1_arm_cortex-a7.ipk\` | \`wrtdeck-linux-arm\` |
+          | **mipsel_24kc** | MIPS 小端设备 | \`wrtdeck-${ver}-r1.mipsel_24kc.apk\` | \`wrtdeck_${ver}-1_mipsel_24kc.ipk\` | \`wrtdeck-linux-mipsle\` |
+          | **mips_24kc** | MIPS 大端设备 | \`wrtdeck-${ver}-r1.mips_24kc.apk\` | \`wrtdeck_${ver}-1_mips_24kc.ipk\` | \`wrtdeck-linux-mips\` |
+
+          ### 校验清单
+
+          发布包 SHA-256 校验和见附件 \`sha256sums.txt\`。
+          EOF
+
+      - name: 发布至 GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          cd dist
+          assets=(
+            wrtdeck-*.apk
+            wrtdeck_*.ipk
+            wrtdeck-linux-*
+            luci-app-wrtdeck-*.apk
+            luci-app-wrtdeck_*.ipk
+            wrtdeck-local.rsa.pub
+            sha256sums.txt
+          )
+          gh release create "$TAG" "${assets[@]}" \
+            --title "WrtDeck $TAG" \
+            --notes-file RELEASE_NOTES.md \
+            --draft=false \
+            --prerelease=false

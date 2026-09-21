@@ -39,7 +39,9 @@ if [ -z "${PKG_ARCH:-}" ]; then
   esac
 fi
 
-build_web package
+if [ "${SKIP_WEB:-0}" != "1" ]; then
+  build_web package
+fi
 
 cd "$root"
 mkdir -p dist

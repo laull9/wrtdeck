@@ -13,7 +13,7 @@ GOARCH  ?= arm64
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev dev-backend dev-frontend web icons backend build release run \
+.PHONY: help dev dev-backend dev-frontend web icons backend build release release-all run \
         apk ipk luci packages check-apk check-ipk check-luci check-ipk-luci \
         test-apk test-ipk test-pkg fmt vet check clean
 
@@ -82,6 +82,10 @@ build:
 # 交叉编译 OpenWrt
 release:
 	@VERSION=$(VERSION) GOARCH=$(GOARCH) sh scripts/release.sh
+
+# 一键打包所有支持架构的发布资产（全架构二进制、apk、ipk 与校验清单）
+release-all:
+	@VERSION=$(VERSION) sh scripts/package-release-all.sh
 
 # 打包面板本体：apk 是 25.12 起的默认格式，ipk 供 24.10 及更早版本
 apk:

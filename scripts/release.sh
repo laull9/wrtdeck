@@ -10,7 +10,9 @@ go_bin="$(find_go)"
 version="${VERSION:-dev}"
 target_arch="${GOARCH:-arm64}"
 
-build_web release
+if [ "${SKIP_WEB:-0}" != "1" ]; then
+  build_web release
+fi
 
 cd "$root"
 mkdir -p dist
