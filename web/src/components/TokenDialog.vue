@@ -47,14 +47,14 @@ function clear(): void {
 <template>
   <DialogRoot :open="props.open" @update:open="emit('update:open', $event)">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+      <DialogOverlay class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm dark:bg-black/70" />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 w-[min(26rem,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl"
+        class="fixed left-1/2 top-1/2 z-50 w-[min(26rem,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-floating p-5 shadow-2xl"
       >
-        <DialogTitle class="text-base font-semibold text-zinc-100">API 访问 Token</DialogTitle>
-        <DialogDescription class="mt-1 text-sm leading-relaxed text-zinc-400">
+        <DialogTitle class="text-base font-semibold text-ink">API 访问 Token</DialogTitle>
+        <DialogDescription class="mt-1 text-sm leading-relaxed text-ink-muted">
           服务默认启用随机 Bearer Token。可在服务端执行
-          <code class="rounded bg-black/50 px-1 py-0.5">owdash -print-token</code>
+          <code class="code-chip">owdash -print-token</code>
           查看当前 Token，或直接读取数据目录下的 secrets.json。
         </DialogDescription>
 

@@ -20,8 +20,14 @@ export const TRANSPORT_CHOICES: Choice[] = [
   { value: 'http', label: 'HTTP', hint: '请求一个 HTTP 接口，最常用' },
   { value: 'tcp', label: 'TCP', hint: '建立 TCP 连接发送载荷，可选等待应答' },
   { value: 'udp', label: 'UDP', hint: '发送一个 UDP 报文，可选等待应答' },
-  { value: 'mqtt', label: 'MQTT', hint: '向 Broker 发布消息，需要服务端接入 MQTT 客户端' },
+  { value: 'mqtt', label: 'MQTT', hint: '动作发布消息，信息源可订阅主题由 Broker 主动推送' },
   { value: 'exec', label: '本地命令', hint: '执行本机可执行文件，需要服务端开启 exec 白名单' },
+]
+
+// MQTT 工作模式
+export const MQTT_MODE_CHOICES: Choice[] = [
+  { value: 'publish', label: '发布', hint: '向主题发一条消息，适合动作' },
+  { value: 'subscribe', label: '订阅', hint: '由 Broker 推送消息驱动取值，只能用于信息源' },
 ]
 
 // HTTP 方法
@@ -30,6 +36,7 @@ export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 // 载荷编码
 export const ENCODING_CHOICES: Choice[] = [
   { value: 'text', label: '文本', hint: '按 UTF-8 文本发送' },
+  { value: 'json', label: 'JSON', hint: '与文本相同，仅表明载荷是 JSON' },
   { value: 'hex', label: '十六进制', hint: '写成 0102FF 形式的字节序列' },
   { value: 'base64', label: 'Base64', hint: '按 base64 解码后的字节发送' },
 ]
@@ -110,6 +117,7 @@ export interface TransportDraft {
   net_timeout_ms: number
   net_expect_reply: boolean
   mqtt_broker: string
+  mqtt_mode: string
   mqtt_topic: string
   mqtt_client_id: string
   mqtt_username: string
@@ -117,6 +125,8 @@ export interface TransportDraft {
   mqtt_qos: number
   mqtt_retain: boolean
   mqtt_payload: string
+  mqtt_encoding: string
+  mqtt_timeout_ms: number
   exec_executable: string
   exec_args: string[]
   exec_timeout_ms: number
@@ -225,6 +235,7 @@ function empty_transport(): TransportDraft {
     net_timeout_ms: 3000,
     net_expect_reply: false,
     mqtt_broker: '',
+    mqtt_mode: 'publish',
     mqtt_topic: '',
     mqtt_client_id: '',
     mqtt_username: '',
@@ -232,6 +243,8 @@ function empty_transport(): TransportDraft {
     mqtt_qos: 0,
     mqtt_retain: false,
     mqtt_payload: '',
+    mqtt_encoding: 'text',
+    mqtt_timeout_ms: 0,
     exec_executable: '',
     exec_args: [],
     exec_timeout_ms: 5000,
@@ -271,6 +284,7 @@ export function draft_from_entry(entry: Entry): EntryDraft {
       net_timeout_ms: t.tcp?.timeout_ms ?? t.udp?.timeout_ms ?? 0,
       net_expect_reply: t.tcp?.expect_reply ?? t.udp?.expect_reply ?? false,
       mqtt_broker: t.mqtt?.broker ?? '',
+      mqtt_mode: t.mqtt?.mode ?? 'publish',
       mqtt_topic: t.mqtt?.topic ?? '',
       mqtt_client_id: t.mqtt?.client_id ?? '',
       mqtt_username: t.mqtt?.username ?? '',
@@ -278,6 +292,8 @@ export function draft_from_entry(entry: Entry): EntryDraft {
       mqtt_qos: t.mqtt?.qos ?? 0,
       mqtt_retain: t.mqtt?.retain ?? false,
       mqtt_payload: t.mqtt?.payload ?? '',
+      mqtt_encoding: t.mqtt?.encoding ?? 'text',
+      mqtt_timeout_ms: t.mqtt?.timeout_ms ?? 0,
       exec_executable: t.exec?.executable ?? '',
       exec_args: [...(t.exec?.args ?? [])],
       exec_timeout_ms: t.exec?.timeout_ms ?? 0,

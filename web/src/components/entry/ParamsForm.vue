@@ -46,13 +46,13 @@ function on_type_change(row: ParamDraft, type: ParamType): void {
   <div class="flex flex-col gap-3">
     <p v-if="params.length === 0" class="field-hint">
       尚未声明参数，点击下方按钮添加。参数会出现在执行确认弹窗里，并可通过
-      <code class="rounded bg-black/50 px-1">${params.参数名}</code> 注入到地址、载荷或请求头中。
+      <code class="code-chip">${params.参数名}</code> 注入到地址、载荷或请求头中。
     </p>
 
     <div
       v-for="(row, index) in params"
       :key="index"
-      class="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-black/20 p-3"
+      class="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-3"
     >
       <div class="grid gap-3 sm:grid-cols-[1fr_9rem_1fr_auto]">
         <FormField label="参数名" required :error="errors[`params.${index}.name`]">
@@ -96,7 +96,7 @@ function on_type_change(row: ParamDraft, type: ParamType): void {
         </FormField>
 
         <FormField label="是否必填" hint="必填参数在执行弹窗里会标记星号">
-          <label class="flex items-center gap-2 text-base text-zinc-300">
+          <label class="flex items-center gap-2 text-base text-ink-body">
             <input v-model="row.required" type="checkbox" class="field-check" />
             {{ row.required ? '必填' : '可留空' }}
           </label>

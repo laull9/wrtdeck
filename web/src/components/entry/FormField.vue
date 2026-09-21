@@ -12,7 +12,7 @@ defineProps<{
   <div class="flex flex-col gap-1.5">
     <span class="field-label">
       {{ label }}
-      <span v-if="required" class="text-rose-400">*</span>
+      <span v-if="required" class="text-rose-500 dark:text-rose-400">*</span>
     </span>
     <slot />
     <p v-if="error" class="field-error">{{ error }}</p>

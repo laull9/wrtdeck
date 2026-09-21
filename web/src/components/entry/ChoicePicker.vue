@@ -23,8 +23,8 @@ const selected = computed(() => props.options.find((item) => item.value === prop
         class="rounded-lg border px-3 py-1.5 text-sm transition-colors"
         :class="
           option.value === modelValue
-            ? 'border-zinc-500 bg-zinc-700/60 text-zinc-100'
-            : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+            ? 'border-line-hover bg-raised-strong text-ink'
+            : 'border-line-strong text-ink-muted hover:border-line-hover hover:text-ink-strong'
         "
         @click="emit('update:modelValue', option.value)"
       >

@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ChoicePicker from './ChoicePicker.vue'
 import FormField from './FormField.vue'
+import type { EntryKind } from '../../types'
 import {
   ENCODING_CHOICES,
   HTTP_METHODS,
+  MQTT_MODE_CHOICES,
   TRANSPORT_CHOICES,
   type TransportDraft,
 } from '../../lib/entry_model'
@@ -12,8 +15,19 @@ import {
 // transport 是父级草稿上的响应式对象，这里直接改它的字段来触发父级更新
 const props = defineProps<{
   transport: TransportDraft
+  kind: EntryKind
   errors: Record<string, string>
 }>()
+
+// MQTT 订阅模式只对信息源开放，动作侧直接过滤掉该选项
+const mqtt_modes = computed(() =>
+  props.kind === 'source'
+    ? MQTT_MODE_CHOICES
+    : MQTT_MODE_CHOICES.filter((item) => item.value === 'publish'),
+)
+
+// 当前是否处于 MQTT 订阅模式，订阅不需要载荷与保留标记
+const mqtt_subscribe = computed(() => props.transport.mqtt_mode === 'subscribe')
 
 // 追加一行请求头
 function add_header(): void {
@@ -75,13 +89,13 @@ function remove_arg(index: number): void {
               v-model="row.key"
               class="field readout flex-1"
               placeholder="Authorization"
-              :class="errors[`transport.http_headers.${index}.key`] ? 'border-rose-700' : ''"
+              :class="errors[`transport.http_headers.${index}.key`] ? 'border-rose-500 dark:border-rose-700' : ''"
             />
             <input
               v-model="row.value"
               class="field readout flex-[1.4]"
               placeholder="Bearer ${secret.api_token}"
-              :class="errors[`transport.http_headers.${index}.value`] ? 'border-rose-700' : ''"
+              :class="errors[`transport.http_headers.${index}.value`] ? 'border-rose-500 dark:border-rose-700' : ''"
             />
             <button type="button" class="btn btn-outline btn-sm" @click="remove_header(index)">删除</button>
           </div>
@@ -100,7 +114,7 @@ function remove_arg(index: number): void {
             v-model="transport.http_body"
             class="field field-area field-code min-h-[5rem]"
             spellcheck="false"
-            :class="errors['transport.http_body'] ? 'border-rose-700' : ''"
+            :class="errors['transport.http_body'] ? 'border-rose-500 dark:border-rose-700' : ''"
             placeholder='{"target": "${params.channel}"}'
           ></textarea>
         </FormField>
@@ -123,7 +137,7 @@ function remove_arg(index: number): void {
           v-model="transport.net_address"
           class="field readout"
           placeholder="192.168.1.20:9000"
-          :class="errors['transport.net_address'] ? 'border-rose-700' : ''"
+          :class="errors['transport.net_address'] ? 'border-rose-500 dark:border-rose-700' : ''"
         />
       </FormField>
 
@@ -140,13 +154,13 @@ function remove_arg(index: number): void {
           v-model="transport.net_payload"
           class="field field-area field-code min-h-[4.5rem]"
           spellcheck="false"
-          :class="errors['transport.net_payload'] ? 'border-rose-700' : ''"
+          :class="errors['transport.net_payload'] ? 'border-rose-500 dark:border-rose-700' : ''"
         ></textarea>
       </FormField>
 
       <div class="grid gap-3 sm:grid-cols-2">
         <FormField label="应答处理" :hint="transport.type === 'udp' ? 'UDP 建议关闭，除非设备会回包' : '打开后会把应答内容作为取值来源'">
-          <label class="flex items-center gap-2 text-base text-zinc-300">
+          <label class="flex items-center gap-2 text-base text-ink-body">
             <input v-model="transport.net_expect_reply" type="checkbox" class="field-check" />
             {{ transport.net_expect_reply ? '等待应答' : '只发送，不等应答' }}
           </label>
@@ -159,35 +173,48 @@ function remove_arg(index: number): void {
 
     <!-- MQTT -->
     <template v-else-if="transport.type === 'mqtt'">
+      <FormField
+        label="工作模式"
+        :error="errors['transport.mqtt_mode']"
+        hint="同一个 Broker 只维护一条共享长连接，订阅型信息源由 Broker 主动推送"
+      >
+        <ChoicePicker v-model="transport.mqtt_mode" :options="mqtt_modes" />
+      </FormField>
+
       <div class="grid gap-3 sm:grid-cols-2">
         <FormField
           label="Broker 地址"
           required
           :error="errors['transport.mqtt_broker']"
-          hint="形如 tcp://192.168.1.20:1883"
+          hint="可省略 scheme，默认按 mqtt:// 处理"
         >
           <input
             v-model="transport.mqtt_broker"
             class="field readout"
-            :class="errors['transport.mqtt_broker'] ? 'border-rose-700' : ''"
+            placeholder="mqtt://192.168.1.20:1883"
+            :class="errors['transport.mqtt_broker'] ? 'border-rose-500 dark:border-rose-700' : ''"
           />
         </FormField>
         <FormField
           label="主题"
           required
           :error="errors['transport.mqtt_topic']"
-          hint="发布用主题，例如 home/livingroom/temp/set"
+          :hint="
+            mqtt_subscribe
+              ? '支持 + 与 # 通配符，例如 home/+/temperature'
+              : '发布到该主题，例如 home/livingroom/temp/set'
+          "
         >
           <input
             v-model="transport.mqtt_topic"
             class="field readout"
-            :class="errors['transport.mqtt_topic'] ? 'border-rose-700' : ''"
+            :class="errors['transport.mqtt_topic'] ? 'border-rose-500 dark:border-rose-700' : ''"
           />
         </FormField>
       </div>
 
       <div class="grid gap-3 sm:grid-cols-3">
-        <FormField label="客户端 ID">
+        <FormField label="客户端 ID" hint="留空时由服务端按 Broker 生成">
           <input v-model="transport.mqtt_client_id" class="field readout" placeholder="owdash" />
         </FormField>
         <FormField label="用户名">
@@ -211,21 +238,36 @@ function remove_arg(index: number): void {
             <option :value="2">2</option>
           </select>
         </FormField>
-        <FormField label="保留消息">
-          <label class="flex items-center gap-2 text-base text-zinc-300">
+        <FormField v-if="!mqtt_subscribe" label="保留消息" hint="Broker 会为新订阅者补发最后一条">
+          <label class="flex items-center gap-2 text-base text-ink-body">
             <input v-model="transport.mqtt_retain" type="checkbox" class="field-check" />
-            {{ transport.mqtt_retain ? 'Broker 保留最后一条消息' : '不保留' }}
+            {{ transport.mqtt_retain ? '保留最后一条消息' : '不保留' }}
           </label>
         </FormField>
       </div>
 
-      <FormField label="消息载荷" hint="支持 ${params.xxx} 模板变量">
-        <textarea
-          v-model="transport.mqtt_payload"
-          class="field field-area field-code min-h-[4.5rem]"
-          spellcheck="false"
-        ></textarea>
-      </FormField>
+      <template v-if="!mqtt_subscribe">
+        <FormField label="载荷编码">
+          <ChoicePicker v-model="transport.mqtt_encoding" :options="ENCODING_CHOICES" />
+        </FormField>
+
+        <div class="grid gap-3 sm:grid-cols-[1fr_9rem]">
+          <FormField label="消息载荷" hint="支持 ${params.xxx} 模板变量">
+            <textarea
+              v-model="transport.mqtt_payload"
+              class="field field-area field-code min-h-[4.5rem]"
+              spellcheck="false"
+            ></textarea>
+          </FormField>
+          <FormField label="超时（ms）" hint="等待建连的上限，0 用服务端默认值">
+            <input v-model.number="transport.mqtt_timeout_ms" type="number" min="0" class="field readout" />
+          </FormField>
+        </div>
+      </template>
+
+      <p v-else class="field-hint">
+        订阅模式下不需要填写载荷。取值由 Broker 推送的消息驱动，卡片会在收到第一条消息前显示「等待推送」。
+      </p>
     </template>
 
     <!-- Exec -->
@@ -240,7 +282,7 @@ function remove_arg(index: number): void {
           v-model="transport.exec_executable"
           class="field readout"
           placeholder="/usr/bin/uptime"
-          :class="errors['transport.exec_executable'] ? 'border-rose-700' : ''"
+          :class="errors['transport.exec_executable'] ? 'border-rose-500 dark:border-rose-700' : ''"
         />
       </FormField>
 
@@ -250,7 +292,7 @@ function remove_arg(index: number): void {
             <input
               v-model="transport.exec_args[index]"
               class="field readout flex-1"
-              :class="errors[`transport.exec_args.${index}`] ? 'border-rose-700' : ''"
+              :class="errors[`transport.exec_args.${index}`] ? 'border-rose-500 dark:border-rose-700' : ''"
             />
             <button type="button" class="btn btn-outline btn-sm" @click="remove_arg(index)">删除</button>
           </div>

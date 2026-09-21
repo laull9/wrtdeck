@@ -10,8 +10,8 @@ defineProps<{
   <section class="panel p-4">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <h3 class="text-base font-semibold text-zinc-200">{{ title }}</h3>
-        <p v-if="desc" class="mt-0.5 text-sm leading-relaxed text-zinc-500">{{ desc }}</p>
+        <h3 class="text-base font-semibold text-ink-strong">{{ title }}</h3>
+        <p v-if="desc" class="mt-0.5 text-sm leading-relaxed text-ink-faint">{{ desc }}</p>
       </div>
       <slot name="action" />
     </div>

@@ -135,8 +135,8 @@ onMounted(load)
   <div class="flex flex-col gap-5">
     <div class="flex items-center gap-3">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold text-zinc-200">注册表</h1>
-        <p class="mt-0.5 text-sm text-zinc-500">
+        <h1 class="text-base font-semibold text-ink-strong">注册表</h1>
+        <p class="mt-0.5 text-sm text-ink-faint">
           注册项就是数据模型本身，新增一条即可在面板上出现卡片或按钮，无需改前端代码。
         </p>
       </div>
@@ -146,11 +146,14 @@ onMounted(load)
       </div>
     </div>
 
-    <p v-if="error" class="rounded-lg border border-rose-900/60 bg-rose-950/30 px-4 py-3 text-base text-rose-300">
+    <p
+      v-if="error"
+      class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-base text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+    >
       {{ error }}
     </p>
 
-    <div v-if="loading" class="panel p-5 text-base text-zinc-400">正在读取注册表…</div>
+    <div v-if="loading" class="panel p-5 text-base text-ink-muted">正在读取注册表…</div>
 
     <template v-else>
       <section
@@ -162,14 +165,14 @@ onMounted(load)
         class="flex flex-col gap-2"
       >
         <div class="flex items-baseline gap-2">
-          <h2 class="text-base font-medium text-zinc-300">{{ group.title }}</h2>
-          <span class="readout text-sm text-zinc-600">{{ group.rows.length }} 项</span>
+          <h2 class="text-base font-medium text-ink-body">{{ group.title }}</h2>
+          <span class="readout text-sm text-ink-ghost">{{ group.rows.length }} 项</span>
         </div>
 
-        <div class="overflow-hidden rounded-xl border border-zinc-800">
+        <div class="overflow-hidden rounded-xl border border-line">
           <table class="w-full border-collapse text-base">
             <thead>
-              <tr class="bg-zinc-900/60 text-left text-[13px] uppercase tracking-wide text-zinc-500">
+              <tr class="bg-surface-2 text-left text-[13px] uppercase tracking-wide text-ink-faint">
                 <th class="px-3 py-2 font-medium">ID</th>
                 <th class="px-3 py-2 font-medium">名称</th>
                 <th class="px-3 py-2 font-medium">分组</th>
@@ -180,18 +183,18 @@ onMounted(load)
             </thead>
             <tbody>
               <tr v-if="group.rows.length === 0">
-                <td colspan="6" class="px-3 py-4 text-center text-sm text-zinc-600">暂无数据</td>
+                <td colspan="6" class="px-3 py-4 text-center text-sm text-ink-ghost">暂无数据</td>
               </tr>
               <tr
                 v-for="entry in group.rows"
                 :key="entry.id"
-                class="border-t border-zinc-800/70 hover:bg-zinc-900/40"
+                class="border-t border-line transition-colors hover:bg-surface-2"
               >
-                <td class="readout px-3 py-2 text-zinc-300">{{ entry.id }}</td>
-                <td class="px-3 py-2 text-zinc-200">{{ entry.name }}</td>
-                <td class="px-3 py-2 text-zinc-500">{{ entry.group || '—' }}</td>
+                <td class="readout px-3 py-2 text-ink-body">{{ entry.id }}</td>
+                <td class="px-3 py-2 text-ink-strong">{{ entry.name }}</td>
+                <td class="px-3 py-2 text-ink-faint">{{ entry.group || '—' }}</td>
                 <td
-                  class="readout max-w-[22rem] truncate px-3 py-2 text-zinc-500"
+                  class="readout max-w-[22rem] truncate px-3 py-2 text-ink-faint"
                   :title="transport_summary(entry)"
                 >
                   {{ transport_summary(entry) }}
@@ -202,8 +205,8 @@ onMounted(load)
                     class="rounded-md px-2 py-0.5 text-[13px] transition-colors disabled:opacity-50"
                     :class="
                       entry.enabled
-                        ? 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-                        : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-700'
+                        ? 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                        : 'bg-raised text-ink-faint hover:bg-raised-strong'
                     "
                     :disabled="toggling === entry.id"
                     :title="entry.enabled ? '点击停用' : '点击启用'"

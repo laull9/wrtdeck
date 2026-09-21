@@ -19,8 +19,8 @@ defineProps<{
         class="rounded-lg border px-3.5 py-2 text-base shadow-lg backdrop-blur"
         :class="
           item.tone === 'ok'
-            ? 'border-emerald-800/70 bg-emerald-950/80 text-emerald-200'
-            : 'border-rose-800/70 bg-rose-950/80 text-rose-200'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/80 dark:text-emerald-200'
+            : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/80 dark:text-rose-200'
         "
       >
         {{ item.text }}

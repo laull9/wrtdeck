@@ -47,6 +47,7 @@ export interface UDPSpec {
 // MQTT 发布或订阅配置
 export interface MQTTSpec {
   broker: string
+  mode?: 'publish' | 'subscribe'
   client_id?: string
   username?: string
   password?: string
@@ -54,6 +55,8 @@ export interface MQTTSpec {
   qos?: number
   retain?: boolean
   payload?: string
+  encoding?: string
+  timeout_ms?: number
 }
 
 // 本地命令配置

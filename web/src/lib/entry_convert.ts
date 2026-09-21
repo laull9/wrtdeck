@@ -64,7 +64,12 @@ function transport_from_draft(t: TransportDraft): TransportSpec {
       spec.udp = net
     }
   } else if (t.type === 'mqtt') {
+    const mode = t.mqtt_mode || 'publish'
     spec.mqtt = { broker: t.mqtt_broker.trim(), topic: t.mqtt_topic.trim() }
+    // 发布是默认模式，落库时省略该字段以保持配置简洁
+    if (mode !== 'publish') {
+      spec.mqtt.mode = mode as 'subscribe'
+    }
     if (t.mqtt_client_id) {
       spec.mqtt.client_id = t.mqtt_client_id
     }
@@ -77,11 +82,20 @@ function transport_from_draft(t: TransportDraft): TransportSpec {
     if (t.mqtt_qos > 0) {
       spec.mqtt.qos = t.mqtt_qos
     }
-    if (t.mqtt_retain) {
+    // 保留标记只对发布有意义
+    if (t.mqtt_retain && mode === 'publish') {
       spec.mqtt.retain = true
     }
-    if (t.mqtt_payload) {
-      spec.mqtt.payload = t.mqtt_payload
+    if (mode === 'publish') {
+      if (t.mqtt_payload) {
+        spec.mqtt.payload = t.mqtt_payload
+      }
+      if (t.mqtt_encoding && t.mqtt_encoding !== 'text') {
+        spec.mqtt.encoding = t.mqtt_encoding
+      }
+      if (t.mqtt_timeout_ms > 0) {
+        spec.mqtt.timeout_ms = t.mqtt_timeout_ms
+      }
     }
   } else if (t.type === 'exec') {
     spec.exec = { executable: t.exec_executable.trim() }

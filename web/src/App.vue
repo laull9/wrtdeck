@@ -5,7 +5,10 @@ import type { DashboardResponse, SourceState } from './types'
 import DashboardView from './views/DashboardView.vue'
 import RegistryView from './views/RegistryView.vue'
 import TokenDialog from './components/TokenDialog.vue'
+import ThemeToggle from './components/ThemeToggle.vue'
 import ToastStack from './components/ToastStack.vue'
+// 品牌标识，由 scripts/make-icons.py 从 assets/WrtDeck.png 生成
+import logo_url from './assets/logo.png'
 
 // 当前视图，只有两个页面因此不引入 Vue Router
 const page = ref<'dashboard' | 'registry'>('dashboard')
@@ -125,14 +128,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex min-h-full flex-col">
-    <header class="sticky top-0 z-20 border-b border-zinc-800/80 bg-[#08090c]/90 backdrop-blur">
+    <header class="sticky top-0 z-20 border-b border-line bg-canvas/90 backdrop-blur">
       <div class="mx-auto flex max-w-6xl items-center gap-4 px-5 py-3">
-        <div class="flex items-baseline gap-2">
-          <span class="text-lg font-semibold tracking-tight text-zinc-100">WrtDeck</span>
-          <span class="readout text-sm text-zinc-500">{{ data?.server.version ?? '—' }}</span>
+        <div class="flex items-center gap-2.5">
+          <img :src="logo_url" alt="WrtDeck" class="h-8 w-8 shrink-0" />
+          <div class="flex items-baseline gap-2">
+            <span class="text-lg font-semibold tracking-tight text-ink">WrtDeck</span>
+            <span class="readout text-sm text-ink-faint">{{ data?.server.version ?? '—' }}</span>
+          </div>
         </div>
 
-        <nav class="flex items-center gap-1 rounded-lg bg-zinc-900/70 p-0.5">
+        <nav class="flex items-center gap-1 rounded-lg bg-track p-0.5">
           <button
             v-for="tab in tabs"
             :key="tab.key"
@@ -140,8 +146,8 @@ onBeforeUnmount(() => {
             class="rounded-md px-3 py-1.5 text-base transition-colors"
             :class="
               page === tab.key
-                ? 'bg-zinc-700/70 text-zinc-100'
-                : 'text-zinc-400 hover:text-zinc-200'
+                ? 'bg-raised-strong text-ink'
+                : 'text-ink-muted hover:text-ink-strong'
             "
             @click="page = tab.key"
           >
@@ -150,44 +156,48 @@ onBeforeUnmount(() => {
         </nav>
 
         <div class="ml-auto flex items-center gap-3 text-sm">
-          <span class="flex items-center gap-1.5 text-zinc-400">
+          <span class="flex items-center gap-1.5 text-ink-muted">
             <span
               class="h-1.5 w-1.5 rounded-full"
-              :class="connected ? 'bg-emerald-400' : 'bg-rose-500'"
+              :class="connected ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-rose-500'"
             ></span>
             {{ connected ? '实时已连接' : '实时断开' }}
           </span>
-          <span class="readout hidden text-zinc-500 sm:inline">
+          <span class="readout hidden text-ink-faint sm:inline">
             {{ data?.server.sources ?? 0 }} 源 / {{ data?.server.actions ?? 0 }} 动作
           </span>
           <button
             v-if="!data?.server.auth_disabled"
             type="button"
             class="btn btn-outline btn-sm"
-            :class="{ 'border-amber-600 text-amber-400': !has_token }"
+            :class="{
+              'border-amber-500 text-amber-600 dark:border-amber-600 dark:text-amber-400':
+                !has_token,
+            }"
             @click="token_open = true"
           >
             {{ has_token ? 'Token' : '设置 Token' }}
           </button>
+          <ThemeToggle />
         </div>
       </div>
     </header>
 
     <main class="mx-auto w-full max-w-6xl flex-1 px-5 py-6">
-      <div v-if="loading" class="panel p-6 text-base text-zinc-400">正在连接服务…</div>
+      <div v-if="loading" class="panel p-6 text-base text-ink-muted">正在连接服务…</div>
 
       <div
         v-else-if="error && !data"
-        class="rounded-xl border border-rose-900/60 bg-rose-950/30 p-6 text-base text-rose-300"
+        class="rounded-xl border border-rose-200 bg-rose-50 p-6 text-base text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
       >
         <p class="font-medium">{{ error }}</p>
-        <p v-if="need_token" class="mt-2 text-rose-400/80">
+        <p v-if="need_token" class="mt-2 text-rose-600/80 dark:text-rose-400/80">
           服务已开启 Bearer Token 鉴权，请点击右上角填入 Token（可在服务端执行
-          <code class="rounded bg-black/40 px-1">owdash -print-token</code> 获取）。
+          <code class="code-chip">owdash -print-token</code> 获取）。
         </p>
         <button
           type="button"
-          class="mt-4 rounded-md border border-rose-800 px-3 py-1.5 text-base text-rose-200 hover:bg-rose-900/40"
+          class="mt-4 rounded-md border border-rose-300 px-3 py-1.5 text-base text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/40"
           @click="load"
         >
           重试

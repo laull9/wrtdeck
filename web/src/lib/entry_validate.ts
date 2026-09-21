@@ -1,5 +1,6 @@
 // 注册项的客户端校验
 // 规则刻意与后端 internal/registry/validate.go 保持一致，让错误在提交前就能定位到字段
+import type { EntryKind } from '../types'
 import {
   parse_optional_number,
   split_options,
@@ -42,7 +43,7 @@ export function validate_draft(draft: EntryDraft): Issue[] {
   if (!text_of(draft.name)) {
     add('name', '名称不能为空')
   }
-  validate_transport(draft.transport, add)
+  validate_transport(draft.transport, draft.kind, add)
   validate_params(draft.params, add)
   if (draft.kind === 'source') {
     if (!(Number(draft.interval_ms) > 0)) {
@@ -55,7 +56,11 @@ export function validate_draft(draft: EntryDraft): Issue[] {
 }
 
 // 检查传输配置是否填齐了当前类型必填的字段
-function validate_transport(t: TransportDraft, add: (path: string, message: string) => void): void {
+function validate_transport(
+  t: TransportDraft,
+  kind: EntryKind,
+  add: (path: string, message: string) => void,
+): void {
   if (t.type === 'http' && !text_of(t.http_url)) {
     add('transport.http_url', '接口地址不能为空')
   }
@@ -68,6 +73,9 @@ function validate_transport(t: TransportDraft, add: (path: string, message: stri
     }
     if (!text_of(t.mqtt_topic)) {
       add('transport.mqtt_topic', '主题不能为空')
+    }
+    if (t.mqtt_mode === 'subscribe' && kind === 'action') {
+      add('transport.mqtt_mode', '订阅模式只能用于信息源，动作请选择发布')
     }
   }
   if (t.type === 'exec' && !text_of(t.exec_executable)) {

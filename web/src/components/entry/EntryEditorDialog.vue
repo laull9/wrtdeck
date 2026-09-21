@@ -168,20 +168,20 @@ async function save(): Promise<void> {
 <template>
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+      <DialogOverlay class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm dark:bg-black/70" />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[min(56rem,95vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl"
+        class="fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[min(56rem,95vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-line bg-floating shadow-2xl"
       >
-        <header class="flex items-center gap-3 border-b border-zinc-800 px-5 py-3.5">
-          <DialogTitle class="text-base font-semibold text-zinc-100">
+        <header class="flex items-center gap-3 border-b border-line px-5 py-3.5">
+          <DialogTitle class="text-base font-semibold text-ink">
             {{ mode === 'new' ? '新增注册项' : '编辑注册项' }}
           </DialogTitle>
           <DialogDescription class="sr-only">编辑注册项的表单与 JSON 配置</DialogDescription>
-          <div class="ml-auto flex items-center gap-1 rounded-lg bg-black/40 p-0.5">
+          <div class="ml-auto flex items-center gap-1 rounded-lg bg-track p-0.5">
             <button
               type="button"
               class="rounded-md px-3 py-1 text-sm transition-colors"
-              :class="tab === 'form' ? 'bg-zinc-700/70 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'"
+              :class="tab === 'form' ? 'bg-raised-strong text-ink' : 'text-ink-muted hover:text-ink-strong'"
               @click="switch_tab('form')"
             >
               表单编辑
@@ -189,7 +189,7 @@ async function save(): Promise<void> {
             <button
               type="button"
               class="rounded-md px-3 py-1 text-sm transition-colors"
-              :class="tab === 'json' ? 'bg-zinc-700/70 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'"
+              :class="tab === 'json' ? 'bg-raised-strong text-ink' : 'text-ink-muted hover:text-ink-strong'"
               @click="switch_tab('json')"
             >
               JSON 高级
@@ -212,7 +212,7 @@ async function save(): Promise<void> {
                     v-model="draft.id"
                     class="field readout"
                     :readonly="!id_editable"
-                    :class="[errors.id ? 'border-rose-700' : '', id_editable ? '' : 'opacity-60']"
+                    :class="[errors.id ? 'border-rose-500 dark:border-rose-700' : '', id_editable ? '' : 'opacity-60']"
                     placeholder="livingroom-temp"
                   />
                 </FormField>
@@ -237,7 +237,7 @@ async function save(): Promise<void> {
                   </datalist>
                 </FormField>
                 <FormField label="启用状态" hint="停用后不再调度，动作按钮也会被禁用">
-                  <label class="flex items-center gap-2 text-base text-zinc-300">
+                  <label class="flex items-center gap-2 text-base text-ink-body">
                     <input v-model="draft.enabled" type="checkbox" class="field-check" />
                     {{ draft.enabled ? '启用' : '停用' }}
                   </label>
@@ -262,7 +262,7 @@ async function save(): Promise<void> {
                   : '决定点击按钮后如何把指令发给设备。'
               "
             >
-              <TransportForm :transport="draft.transport" :errors="errors" />
+              <TransportForm :transport="draft.transport" :kind="draft.kind" :errors="errors" />
             </FormSection>
 
             <FormSection
@@ -347,7 +347,7 @@ async function save(): Promise<void> {
               desc="开启后点击按钮会先弹窗确认，可用来拦住误触的不可逆操作。"
             >
               <FormField label="启用确认">
-                <label class="flex items-center gap-2 text-base text-zinc-300">
+                <label class="flex items-center gap-2 text-base text-ink-body">
                   <input v-model="draft.ui.confirm_enabled" type="checkbox" class="field-check" />
                   {{ draft.ui.confirm_enabled ? '执行前需要确认' : '点击即执行' }}
                 </label>
@@ -366,7 +366,7 @@ async function save(): Promise<void> {
           <!-- JSON 高级编辑 -->
           <div v-else class="flex flex-col gap-3">
             <p class="field-hint">
-              这里就是提交给 <code class="rounded bg-black/50 px-1">PUT /api/v1/registry/{id}</code> 的原始报文，适合批量调整或复制配置。切回表单时会被重新解析。
+              这里就是提交给 <code class="code-chip">PUT /api/v1/registry/{id}</code> 的原始报文，适合批量调整或复制配置。切回表单时会被重新解析。
             </p>
             <textarea
               v-model="json_text"
@@ -378,15 +378,15 @@ async function save(): Promise<void> {
           </div>
         </div>
 
-        <footer class="flex items-center gap-3 border-t border-zinc-800 px-5 py-3.5">
+        <footer class="flex items-center gap-3 border-t border-line px-5 py-3.5">
           <div class="min-w-0 flex-1 text-sm">
-            <p v-if="submit_error" class="truncate text-rose-400" :title="submit_error">
+            <p v-if="submit_error" class="truncate text-rose-600 dark:text-rose-400" :title="submit_error">
               保存失败：{{ submit_error }}
             </p>
-            <p v-else-if="issues.length" class="truncate text-amber-400" :title="issues[0]?.message">
+            <p v-else-if="issues.length" class="truncate text-amber-600 dark:text-amber-400" :title="issues[0]?.message">
               还有 {{ issues.length }} 处需要修正：{{ issues[0]?.message }}
             </p>
-            <p v-else class="text-zinc-500">校验通过，可以保存</p>
+            <p v-else class="text-ink-faint">校验通过，可以保存</p>
           </div>
           <button type="button" class="btn btn-ghost" @click="emit('update:open', false)">取消</button>
           <button type="button" class="btn btn-primary" :disabled="!can_save" @click="save">

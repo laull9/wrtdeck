@@ -1,6 +1,103 @@
 @import 'tailwindcss';
 
-/* 深色控制台基调，直接给 body 定色避免首屏闪白 */
+/* 深色由 html 上的 .dark 类决定，而不是媒体查询，
+   这样右上角的切换按钮才能覆盖系统偏好。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 语义色层：界面里只使用 bg-surface / text-ink 这类名字，
+   具体色值集中在下面的 :root 与 :root.dark 两处，改主题不必翻组件。 */
+@theme inline {
+  /* 容器层级，从页面底到最上层浮层 */
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-track: var(--c-track);
+  --color-sunken: var(--c-sunken);
+  --color-raised: var(--c-raised);
+  --color-raised-strong: var(--c-raised-strong);
+  --color-floating: var(--c-floating);
+
+  /* 描边三级：常规分隔、输入控件、悬停高亮 */
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-line-hover: var(--c-line-hover);
+
+  /* 文字六级，从最强到最弱，深浅两套里方向相反 */
+  --color-ink: var(--c-ink);
+  --color-ink-strong: var(--c-ink-strong);
+  --color-ink-body: var(--c-ink-body);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-faint: var(--c-ink-faint);
+  --color-ink-ghost: var(--c-ink-ghost);
+
+  /* 反色块：主按钮等「深底浅字」的控件，深色主题下整体翻转 */
+  --color-solid: var(--c-solid);
+  --color-solid-hover: var(--c-solid-hover);
+  --color-on-solid: var(--c-on-solid);
+}
+
+/* 浅色主题。主色沿用中性灰，靠白色卡片与浅灰画布的明度差分层 */
+:root {
+  color-scheme: light;
+
+  --c-canvas: #f4f5f7;
+  --c-surface: #ffffff;
+  --c-surface-2: #eff1f4;
+  --c-track: #e8e9ee;
+  --c-sunken: #fbfbfc;
+  --c-raised: #e9eaee;
+  --c-raised-strong: #d7d9e0;
+  --c-floating: #ffffff;
+
+  --c-line: #e4e5ea;
+  --c-line-strong: #d3d5dc;
+  --c-line-hover: #a1a5ae;
+
+  --c-ink: #17181c;
+  --c-ink-strong: #2a2b31;
+  --c-ink-body: #3f4045;
+  --c-ink-muted: #5b5d66;
+  --c-ink-faint: #74767f;
+  --c-ink-ghost: #a3a5ad;
+
+  --c-solid: #1b1c20;
+  --c-solid-hover: #000000;
+  --c-on-solid: #fafafa;
+
+  --c-scrollbar: #c9ccd3;
+}
+
+/* 深色主题。取值与改造前保持一致，避免视觉上出现无意的偏移 */
+:root.dark {
+  color-scheme: dark;
+
+  --c-canvas: #08090c;
+  --c-surface: #0e0f12;
+  --c-surface-2: #131316;
+  --c-track: #131316;
+  --c-sunken: #0b0c0e;
+  --c-raised: #27272a;
+  --c-raised-strong: #33343a;
+  --c-floating: #18181b;
+
+  --c-line: #27272a;
+  --c-line-strong: #3f3f46;
+  --c-line-hover: #71717a;
+
+  --c-ink: #f4f4f5;
+  --c-ink-strong: #e4e4e7;
+  --c-ink-body: #d4d4d8;
+  --c-ink-muted: #a1a1aa;
+  --c-ink-faint: #71717a;
+  --c-ink-ghost: #52525b;
+
+  --c-solid: #f4f4f5;
+  --c-solid-hover: #ffffff;
+  --c-on-solid: #18181b;
+
+  --c-scrollbar: #3f3f46;
+}
+
 html,
 body,
 #app {
@@ -9,8 +106,8 @@ body,
 
 body {
   margin: 0;
-  background-color: #08090c;
-  color: #d4d4d8;
+  background-color: var(--c-canvas);
+  color: var(--c-ink-body);
   font-family:
     system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -25,7 +122,7 @@ body {
 /* 细滚动条，避免在窄面板里占用过多宽度 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
+  scrollbar-color: var(--c-scrollbar) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -34,7 +131,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #3f3f46;
+  background-color: var(--c-scrollbar);
   border-radius: 4px;
 }
 
@@ -42,7 +139,7 @@ body {
 @layer components {
   /* 文本、数字、下拉等单行输入 */
   .field {
-    @apply w-full rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-base text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply w-full rounded-lg border border-line-strong bg-sunken px-3 py-2 text-base text-ink outline-none transition-colors placeholder:text-ink-ghost focus:border-line-hover disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   /* 多行输入，与 .field 叠加使用 */
@@ -55,24 +152,24 @@ body {
     @apply font-mono text-sm;
   }
 
-  /* 复选框与单选点 */
+  /* 复选框与单选点，accent 跟随文字色自动翻转 */
   .field-check {
-    @apply h-4 w-4 shrink-0 rounded border-zinc-600 bg-black/40 accent-zinc-300;
+    @apply h-4 w-4 shrink-0 rounded border-line-strong bg-sunken accent-ink;
   }
 
   /* 表单标签 */
   .field-label {
-    @apply text-sm font-medium text-zinc-300;
+    @apply text-sm font-medium text-ink-body;
   }
 
   /* 表单项说明文字 */
   .field-hint {
-    @apply text-sm leading-relaxed text-zinc-500;
+    @apply text-sm leading-relaxed text-ink-faint;
   }
 
   /* 表单项错误文字 */
   .field-error {
-    @apply text-sm leading-relaxed text-rose-400;
+    @apply text-sm leading-relaxed text-rose-600 dark:text-rose-400;
   }
 
   /* 通用按钮基类 */
@@ -85,28 +182,38 @@ body {
     @apply px-2.5 py-1 text-sm;
   }
 
-  /* 主按钮 */
+  /* 纯图标按钮，与 btn-sm 的行高对齐 */
+  .btn-icon {
+    @apply h-7 w-7 p-0;
+  }
+
+  /* 主按钮，深浅主题下整体反色 */
   .btn-primary {
-    @apply bg-zinc-100 text-zinc-900 hover:bg-white;
+    @apply bg-solid text-on-solid hover:bg-solid-hover;
   }
 
   /* 描边按钮 */
   .btn-outline {
-    @apply border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100;
+    @apply border border-line-strong text-ink-body hover:border-line-hover hover:text-ink;
   }
 
   /* 纯文字按钮 */
   .btn-ghost {
-    @apply text-zinc-400 hover:text-zinc-200;
+    @apply text-ink-muted hover:text-ink-strong;
   }
 
   /* 危险操作按钮 */
   .btn-danger {
-    @apply text-rose-400/80 hover:bg-rose-950/60 hover:text-rose-300;
+    @apply text-rose-600/90 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400/80 dark:hover:bg-rose-950/60 dark:hover:text-rose-300;
   }
 
   /* 卡片容器 */
   .panel {
-    @apply rounded-xl border border-zinc-800 bg-zinc-900/40;
+    @apply rounded-xl border border-line bg-surface;
+  }
+
+  /* 行内代码片段，跟随主题给出可见的浅底 */
+  .code-chip {
+    @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.95em];
   }
 }

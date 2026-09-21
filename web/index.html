@@ -2,9 +2,39 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 移动端浏览器地址栏配色，由下面的内联脚本与 src/lib/theme.ts 同步 -->
+    <meta name="theme-color" content="#f4f5f7" />
+    <script>
+      // 主题必须在首帧前定下来，否则刷新时会先闪一下另一套配色。
+      // 键名与取值逻辑必须与 src/lib/theme.ts 保持一致。
+      ;(function () {
+        var dark = false
+        try {
+          var saved = window.localStorage.getItem('owdash.theme')
+          dark =
+            saved === 'dark' ||
+            (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        } catch (err) {
+          /* 隐私模式下 localStorage 不可用，退回跟随系统 */
+          dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        }
+        if (dark) {
+          document.documentElement.classList.add('dark')
+        }
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) {
+          meta.setAttribute('content', dark ? '#08090c' : '#f4f5f7')
+        }
+      })()
+    </script>
+    <!-- 站点图标由 scripts/make-icons.py 从 assets/WrtDeck.png 生成，改图标请改母版后重新生成 -->
+    <!-- favicon.ico 已内含 16x16 / 32x32 / 48x48，无需再单独声明小尺寸 PNG -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <!-- 深浅两套主题都要用，实际生效哪套由 prefers-color-scheme 或 html.dark 决定 -->
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="WrtDeck —— OpenWrt 设备状态面板与动作控制台" />
     <title>WrtDeck 控制面板</title>
   </head>
   <body>
