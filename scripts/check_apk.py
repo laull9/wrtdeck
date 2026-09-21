@@ -378,8 +378,8 @@ def check_config(report, data_entries, preset):
 def check_naming(report, path, preset, fields):
     report.step('8. 文件名与版本')
     base = os.path.basename(path)
-    # 版本号里允许出现 -rc1 / -beta2 这类预发布后缀，因此不能简单按第一个 - 切分
-    pattern = re.compile(r'^%s-(?P<version>[0-9][A-Za-z0-9._]*(?:-[A-Za-z][A-Za-z0-9._]*)*)-r(?P<release>[0-9]+)\.apk$'
+    # 版本号里允许出现 -rc1 / -beta2 这类预发布后缀，全架构打包时文件名还可能携带架构后缀（如 .x86_64.apk）
+    pattern = re.compile(r'^%s-(?P<version>[0-9][A-Za-z0-9._]*(?:-[A-Za-z][A-Za-z0-9._]*)*)-r(?P<release>[0-9]+)(?:\.[A-Za-z0-9_]+)?\.apk$'
                          % re.escape(preset['name']))
     matched = pattern.match(base)
     report.expect(matched is not None, '文件名符合 name-版本-r发布号.apk 约定', base)

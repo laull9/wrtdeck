@@ -133,7 +133,17 @@ assert_file() {
   assert_eq "$_mode" "$2" "$1 权限为 $2"
 }
 
-bad_owner="$(tar tvzf "$work/data.tar.gz" | awk '$3 != "root" || $4 != "root" { print $3 ":" $4 " " $NF }')"
+bad_owner="$(tar tvzf "$work/data.tar.gz" | awk '{
+  if ($2 ~ /^[0-9]+$/) {
+    user = $3; group = $4;
+  } else {
+    split($2, ug, "/");
+    user = ug[1]; group = ug[2];
+  }
+  if ((user != "root" && user != "0") || (group != "root" && group != "0")) {
+    print user ":" group " " $NF;
+  }
+}')"
 if [ -z "$bad_owner" ]; then
   ok "数据部分属主统一为 root:root"
 else

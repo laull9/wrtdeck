@@ -85,7 +85,7 @@ else
   ng "整包中缺少 .PKGINFO"
 fi
 
-if grep -q '^[^ ]* *[0-9]* *root *root' "$work/listing.txt"; then
+if grep -E -q '(root/root|root +root|0/0|0 +0)' "$work/listing.txt"; then
   ok "tar 视角下条目属主为 root"
 else
   ng "tar 视角下存在非 root 属主"
