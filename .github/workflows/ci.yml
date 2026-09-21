@@ -40,10 +40,15 @@ jobs:
         run: |
           go test -v ./...
 
+      - name: 构建面板与薄壳安装包
+        run: |
+          make packages
+
       - name: 校验 LuCI 契约断言
         run: |
           make check-luci
+          make check-ipk-luci
 
-      - name: 打包与 OpenWrt 模拟安装升级测试
+      - name: OpenWrt 模拟安装升级测试
         run: |
           make test-pkg

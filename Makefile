@@ -101,27 +101,27 @@ luci:
 # 四种产物一次打全
 packages: apk ipk luci
 
-# 结构校验：三个脚本都不传路径时自动取 dist/ 下最新的对应产物
-check-apk:
+# 结构校验：自动确保产物已生成，若未传路径自动取 dist/ 最新产物
+check-apk: apk
 	@sh scripts/check-apk.sh
 
-check-ipk:
+check-ipk: ipk
 	@sh scripts/check-ipk.sh
 
-check-luci:
+check-luci: luci
 	@sh scripts/check-apk.sh --preset=luci
 
-check-ipk-luci:
+check-ipk-luci: luci
 	@sh scripts/check-ipk.sh --preset=luci
 
 # 完整打包测试：先校验结构，再模拟一次安装运行
-test-apk: check-apk
+test-apk: apk check-apk
 	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck-*.apk 2>/dev/null | sort -V | tail -1)"
 
-test-ipk: check-ipk
+test-ipk: ipk check-ipk
 	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck_*.ipk 2>/dev/null | sort -V | tail -1)"
 
-test-pkg: check-apk check-ipk check-luci check-ipk-luci
+test-pkg: packages check-apk check-ipk check-luci check-ipk-luci
 	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck-*.apk 2>/dev/null | sort -V | tail -1)"
 	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck_*.ipk 2>/dev/null | sort -V | tail -1)"
 
