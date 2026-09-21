@@ -5,7 +5,7 @@
 apk 的读法是「把整个包当一条连续 tar 流读」，因此段的定位与结束块位置是这里最要紧的断言。
 
 用法：
-  python3 scripts/check_apk.py dist/owdash-1.0.0-r1.apk --preset owdash [--pubkey 公钥路径]
+  python3 scripts/check_apk.py dist/wrtdeck-1.0.0-r1.apk --preset wrtdeck [--pubkey 公钥路径]
   python3 scripts/check_apk.py dist/xxx.apk --advice-counts /tmp/counts
 """
 
@@ -22,12 +22,12 @@ import apk_tar
 
 # 各包的结构预期。新增包时补一条即可，校验逻辑不用改。
 PRESETS = {
-    'owdash': {
-        'name': 'owdash',
+    'wrtdeck': {
+        'name': 'wrtdeck',
         'files': [
-            ('usr/bin/owdash', '0755'),
-            ('etc/init.d/owdash', '0755'),
-            ('etc/owdash/config.json', '0644'),
+            ('usr/bin/wrtdeck', '0755'),
+            ('etc/init.d/wrtdeck', '0755'),
+            ('etc/wrtdeck/config.json', '0644'),
         ],
         'depends': ['ca-bundle'],
         'scripts': ['post-install', 'post-upgrade', 'pre-deinstall'],
@@ -39,10 +39,10 @@ PRESETS = {
             'mipsel': 'MIPS',
             'mips': 'MIPS',
         },
-        'init': 'etc/init.d/owdash',
-        'config': 'etc/owdash/config.json',
-        'program': '/usr/bin/owdash',
-        'conf_dir': '/etc/owdash',
+        'init': 'etc/init.d/wrtdeck',
+        'config': 'etc/wrtdeck/config.json',
+        'program': '/usr/bin/wrtdeck',
+        'conf_dir': '/etc/wrtdeck',
     },
     'luci': {
         'name': 'luci-app-wrtdeck',
@@ -52,7 +52,7 @@ PRESETS = {
             ('usr/libexec/rpcd/wrtdeck', '0755'),
             ('www/luci-static/resources/view/wrtdeck/panel.js', '0644'),
         ],
-        'depends': ['luci-base', 'owdash'],
+        'depends': ['luci-base', 'wrtdeck'],
         'scripts': ['post-install'],
         'elf': False,
         'arch_elf': {},
@@ -111,7 +111,7 @@ class Report:
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='校验 apk 包结构')
     parser.add_argument('package', help='待校验的 .apk 路径')
-    parser.add_argument('--preset', default='owdash', choices=sorted(PRESETS), help='结构预期')
+    parser.add_argument('--preset', default='wrtdeck', choices=sorted(PRESETS), help='结构预期')
     parser.add_argument('--pubkey', default='', help='用于验签的公钥路径，给出则实际验签')
     parser.add_argument('--counts-out', default='', help='把 通过数 失败数 写到这个文件，供外层合并')
     parser.add_argument('--allow-unsigned', action='store_true', help='允许未签名')

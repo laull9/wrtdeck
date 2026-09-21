@@ -89,16 +89,16 @@ find_python3() {
 # 结果写入 APK_SIGN_KEY / APK_SIGN_NAME / APK_SIGN_PUB 三个全局变量。
 ensure_apk_key() {
   APK_SIGN_KEY=""
-  APK_SIGN_NAME="owdash-local.rsa.pub"
+  APK_SIGN_NAME="wrtdeck-local.rsa.pub"
   APK_SIGN_PUB="$(project_root)/dist/$APK_SIGN_NAME"
   if [ "${APK_SIGN:-1}" = "0" ]; then
     return 0
   fi
 
-  APK_SIGN_KEY="$(project_root)/packaging/keys/owdash-local.rsa"
+  APK_SIGN_KEY="$(project_root)/packaging/keys/wrtdeck-local.rsa"
   if [ ! -f "$APK_SIGN_KEY" ]; then
     mkdir -p "$(dirname "$APK_SIGN_KEY")"
-    log_info apk "首次打包，生成本地 apk 签名密钥 packaging/keys/owdash-local.rsa"
+    log_info apk "首次打包，生成本地 apk 签名密钥 packaging/keys/wrtdeck-local.rsa"
     if ! openssl genrsa -out "$APK_SIGN_KEY" 4096 2>/dev/null; then
       echo "生成签名密钥失败，请检查 openssl；或设置 APK_SIGN=0 跳过签名" >&2
       exit 1

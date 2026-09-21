@@ -65,7 +65,7 @@ async function save(): Promise<void> {
         </DialogDescription>
 
         <p class="mt-3 text-sm leading-relaxed text-ink-muted">
-          获取方式：在设备上执行 <code class="code-chip">/etc/init.d/owdash token</code>。
+          获取方式：在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck token</code>。
         </p>
 
         <input

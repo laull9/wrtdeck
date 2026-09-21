@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"owdash/internal/state"
+	"wrtdeck/internal/state"
 )
 
 // heartbeat_interval 是 SSE 心跳间隔，用来穿过中间设备的空闲超时

@@ -2,16 +2,16 @@
 # 安装后：首次安装才启用并启动服务，升级时保持用户当前的启停状态
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
-if [ ! -f /etc/owdash/.installed ]; then
-	touch /etc/owdash/.installed
-	/etc/init.d/owdash enable
-	/etc/init.d/owdash start
+if [ ! -f /etc/wrtdeck/.installed ]; then
+	touch /etc/wrtdeck/.installed
+	/etc/init.d/wrtdeck enable
+	/etc/init.d/wrtdeck start
 	echo "WrtDeck 已安装并启动，访问 http://<设备IP>:8080"
 	echo "初始口令 admin：首次登录后必须立即修改，否则只允许内网登录"
-	echo "  忘记口令：/etc/init.d/owdash password"
-	echo "  API Token：/etc/init.d/owdash token"
+	echo "  忘记口令：/etc/init.d/wrtdeck password"
+	echo "  API Token：/etc/init.d/wrtdeck token"
 else
-	/etc/init.d/owdash restart
+	/etc/init.d/wrtdeck restart
 fi
 
 exit 0

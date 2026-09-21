@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 构建前端并把产物嵌入后端二进制，输出到 dist/owdash
+# 构建前端并把产物嵌入后端二进制，输出到 dist/wrtdeck
 
 set -eu
 
@@ -17,7 +17,7 @@ log_info build "构建后端（本机平台）"
 "$go_bin" build \
   -trimpath \
   -ldflags="-s -w -X main.version=${version}" \
-  -o dist/owdash \
-  ./cmd/owdash
+  -o dist/wrtdeck \
+  ./cmd/wrtdeck
 
-report_artifact build dist/owdash
+report_artifact build dist/wrtdeck

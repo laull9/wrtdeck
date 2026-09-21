@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"owdash/internal/config"
+	"wrtdeck/internal/config"
 )
 
 // error_body 是统一的错误响应结构

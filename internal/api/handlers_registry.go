@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 
-	"owdash/internal/registry"
-	"owdash/internal/state"
-	"owdash/internal/transport"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
+	"wrtdeck/internal/transport"
 )
 
 // handle_registry_list 返回全部注册项

@@ -231,8 +231,8 @@ async function save(): Promise<void> {
 
               <div class="grid gap-3 sm:grid-cols-2">
                 <FormField label="分组" hint="同组的信息源会归到面板上的同一个区块">
-                  <input v-model="draft.group" class="field" list="owdash-group-options" placeholder="未分组" />
-                  <datalist id="owdash-group-options">
+                  <input v-model="draft.group" class="field" list="wrtdeck-group-options" placeholder="未分组" />
+                  <datalist id="wrtdeck-group-options">
                     <option v-for="name in groups" :key="name" :value="name"></option>
                   </datalist>
                 </FormField>

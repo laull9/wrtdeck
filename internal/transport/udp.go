@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // udp_transport 负责发送 UDP 报文，可选等待一次单包回应

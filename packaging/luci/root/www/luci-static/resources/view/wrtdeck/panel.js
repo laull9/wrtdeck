@@ -14,9 +14,9 @@
  * 消息类型与面板 web/src/lib/handoff.ts 一一对应，改一处要同步另一处。
  */
 
-var handoff_message = 'owdash.handoff';
-var ready_message = 'owdash.ready';
-var accepted_message = 'owdash.accepted';
+var handoff_message = 'wrtdeck.handoff';
+var ready_message = 'wrtdeck.ready';
+var accepted_message = 'wrtdeck.accepted';
 
 // 面板可能比父窗口晚就绪，凭据要多投递几次；面板报到或回执时会重新计数
 var resend_total = 12;
@@ -132,8 +132,8 @@ return view.extend({
 
 		if (!status.installed) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '还没有安装 WrtDeck 面板本体（owdash）。'),
-				E('p', {}, '可执行：', E('code', {}, 'apk add owdash'), '（24.10 及更早版本用 ', E('code', {}, 'opkg install owdash'), '）')
+				E('p', {}, '还没有安装 WrtDeck 面板本体（wrtdeck）。'),
+				E('p', {}, '可执行：', E('code', {}, 'apk add wrtdeck'), '（24.10 及更早版本用 ', E('code', {}, 'opkg install wrtdeck'), '）')
 			]));
 			return E(children);
 		}
@@ -158,7 +158,7 @@ return view.extend({
 			children.push(E('div', { 'class': 'alert-message warning' }, [
 				E('p', {}, '面板仍在使用初始口令，任何人都能试着用 admin 登进来。'),
 				E('p', {}, '请进入面板登录一次并立即修改口令；改完之后这里会自动恢复免密进入。'),
-				E('p', {}, '忘记口令时可在设备上执行 ', E('code', {}, '/etc/init.d/owdash password'), ' 重置。')
+				E('p', {}, '忘记口令时可在设备上执行 ', E('code', {}, '/etc/init.d/wrtdeck password'), ' 重置。')
 			]));
 		}
 		else if (credentials.reason) {

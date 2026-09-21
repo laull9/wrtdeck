@@ -4,7 +4,7 @@ import { ref } from 'vue'
 export type Theme = 'light' | 'dark'
 
 // 本地存储键名，必须与 index.html 内联脚本里的字面量一致，否则刷新会闪一下
-const storage_key = 'owdash.theme'
+const storage_key = 'wrtdeck.theme'
 
 // 两套主题对应的移动端地址栏配色，取值与 style.css 里的 --c-canvas 一致
 const chrome_color: Record<Theme, string> = { light: '#f4f5f7', dark: '#08090c' }

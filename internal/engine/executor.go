@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"owdash/internal/config"
-	"owdash/internal/extract"
-	"owdash/internal/registry"
-	"owdash/internal/state"
-	"owdash/internal/template"
-	"owdash/internal/transport"
+	"wrtdeck/internal/config"
+	"wrtdeck/internal/extract"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
+	"wrtdeck/internal/template"
+	"wrtdeck/internal/transport"
 )
 
 // Executor 负责把一条注册项跑成一个真实结果

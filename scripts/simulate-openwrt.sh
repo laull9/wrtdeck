@@ -23,7 +23,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 # 因此先把包路径定成绝对路径，否则一 cd 就再也找不到它。
 pkg="${1:-}"
 if [ -z "$pkg" ]; then
-  pkg="$(ls -1 "$root"/dist/owdash_*.ipk 2>/dev/null | head -1)"
+  pkg="$(ls -1 "$root"/dist/wrtdeck_*.ipk 2>/dev/null | head -1)"
 fi
 if [ -z "$pkg" ] || [ ! -f "$pkg" ]; then
   echo "找不到安装包，请先执行：make packages" >&2
@@ -77,32 +77,32 @@ ipk)
   ;;
 esac
 
-for f in usr/bin/owdash etc/init.d/owdash etc/owdash/config.json; do
+for f in usr/bin/wrtdeck etc/init.d/wrtdeck etc/wrtdeck/config.json; do
   [ -f "$rootfs/$f" ] || die "包内缺少 $f"
 done
 ok "包内文件齐全，解包到 $rootfs"
-printf '  file: %s\n' "$(file -b "$rootfs/usr/bin/owdash")"
+printf '  file: %s\n' "$(file -b "$rootfs/usr/bin/wrtdeck")"
 
 # 交叉编译产物无法在本机执行，换成同源码的本机二进制
-"$go_bin" build -trimpath -o "$rootfs/usr/bin/owdash" "$root/cmd/owdash"
+"$go_bin" build -trimpath -o "$rootfs/usr/bin/wrtdeck" "$root/cmd/wrtdeck"
 ok "已替换为本机二进制用于运行时验证（不影响包内 ELF 属性）"
 
 # 改到空闲端口，避免与开发环境的 8080 冲突；
-# data_dir 在设备上是 /etc/owdash，模拟时一并重定向到临时目录。
+# data_dir 在设备上是 /etc/wrtdeck，模拟时一并重定向到临时目录。
 sed -i.bak -e "s/\"0.0.0.0:8080\"/\"127.0.0.1:${port}\"/" \
-           -e "s#\"data_dir\": \"/etc/owdash\"#\"data_dir\": \"${rootfs}/etc/owdash\"#" \
-    "$rootfs/etc/owdash/config.json"
-rm -f "$rootfs/etc/owdash/config.json.bak"
+           -e "s#\"data_dir\": \"/etc/wrtdeck\"#\"data_dir\": \"${rootfs}/etc/wrtdeck\"#" \
+    "$rootfs/etc/wrtdeck/config.json"
+rm -f "$rootfs/etc/wrtdeck/config.json.bak"
 ok "监听地址改为 127.0.0.1:${port}，data_dir 重定向到临时目录"
 
 # ── 2. 桩化 procd，执行 init 脚本 ──────────────────────────────────────────
 step "2. 执行 init 脚本的 start_service"
-init="$rootfs/etc/init.d/owdash"
+init="$rootfs/etc/init.d/wrtdeck"
 
 # init 脚本里的路径是设备上的绝对路径，模拟时重定向到临时目录；
 # 路径与包内容是否一致已由 check-ipk.sh 断言。
-sed -i.bak "s#^PROG=/usr/bin/owdash#PROG=$rootfs/usr/bin/owdash#" "$init"
-sed -i.bak "s#^CONF_DIR=/etc/owdash#CONF_DIR=$rootfs/etc/owdash#" "$init"
+sed -i.bak "s#^PROG=/usr/bin/wrtdeck#PROG=$rootfs/usr/bin/wrtdeck#" "$init"
+sed -i.bak "s#^CONF_DIR=/etc/wrtdeck#CONF_DIR=$rootfs/etc/wrtdeck#" "$init"
 sed -i.bak "s#^CONF=\"\$CONF_DIR/config.json\"#CONF=\"\$CONF_DIR/config.json\"#" "$init"
 rm -f "$init.bak"
 
@@ -176,28 +176,28 @@ init_token="$(token)"
 [ -n "$init_token" ] || die "init 脚本的 token 命令没有输出"
 ok "init 脚本的 token 命令可用（长度 ${#init_token}）"
 
-[ -f "$rootfs/etc/owdash/secrets.json" ] || die "首启没有生成 secrets.json"
+[ -f "$rootfs/etc/wrtdeck/secrets.json" ] || die "首启没有生成 secrets.json"
 ok "首启已生成 secrets.json"
 
 # 口令只以散列形式存在，明文与 API Token 都不该出现在日志里
-if grep -q '"password"' "$rootfs/etc/owdash/secrets.json"; then
+if grep -q '"password"' "$rootfs/etc/wrtdeck/secrets.json"; then
   ok "secrets.json 里存有口令散列"
 else
   die "secrets.json 里没有口令字段"
 fi
 # BSD grep 不支持 BRE 里的 \| 交替（会当成字面量），因此用多个 -e 表达。
-if grep -q -e '"hash"' -e '"salt"' "$rootfs/etc/owdash/secrets.json"; then
+if grep -q -e '"hash"' -e '"salt"' "$rootfs/etc/wrtdeck/secrets.json"; then
   ok "口令以散列 + 盐的形式存储"
 else
   die "口令没有按散列存储"
 fi
-if [ -z "$(grep -o '"must_change_password": *true' "$rootfs/etc/owdash/secrets.json")" ]; then
+if [ -z "$(grep -o '"must_change_password": *true' "$rootfs/etc/wrtdeck/secrets.json")" ]; then
   die "全新安装应当标记 must_change_password"
 fi
 ok "首启标记了必须修改初始口令"
 
 # 包内默认配置不应显式关闭鉴权或 TLS 开关之外的认证项
-if grep -q '"disabled"' "$rootfs/etc/owdash/config.json"; then
+if grep -q '"disabled"' "$rootfs/etc/wrtdeck/config.json"; then
   die "包内默认配置不应出现 auth.disabled"
 fi
 ok "默认配置未关闭鉴权"
@@ -318,13 +318,13 @@ ok "伪造的登录码被拒（401）"
 
 # ── 8. 数据落盘位置 ────────────────────────────────────────────────────────
 step "8. 数据落盘位置"
-if [ -f "$rootfs/etc/owdash/secrets.json" ]; then
-  ok "secrets.json 落在 data_dir（/etc/owdash）内"
+if [ -f "$rootfs/etc/wrtdeck/secrets.json" ]; then
+  ok "secrets.json 落在 data_dir（/etc/wrtdeck）内"
 else
   echo "secrets.json 未落在 data_dir 内" >&2
   exit 1
 fi
-if [ -f "$rootfs/etc/owdash/registry.json" ]; then
+if [ -f "$rootfs/etc/wrtdeck/registry.json" ]; then
   echo "空注册表不应在启动时落盘" >&2
   exit 1
 fi
@@ -337,14 +337,14 @@ curl -fsS -X PUT "http://127.0.0.1:${port}/api/v1/registry/sim-selfcheck" \
   > "$stage/put.json"
 ok "注册项写入成功：$(head -c 80 "$stage/put.json")"
 
-if [ -f "$rootfs/etc/owdash/registry.json" ]; then
+if [ -f "$rootfs/etc/wrtdeck/registry.json" ]; then
   ok "registry.json 已落盘到 data_dir"
 else
   echo "写入注册项后 registry.json 仍未落盘" >&2
   exit 1
 fi
 
-if [ -f "$rootfs/etc/owdash/state.json" ]; then
+if [ -f "$rootfs/etc/wrtdeck/state.json" ]; then
   echo "运行状态不应落盘（会产生闪存写放大）" >&2
   exit 1
 fi

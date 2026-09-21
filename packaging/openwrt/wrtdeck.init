@@ -5,8 +5,8 @@ START=95
 STOP=10
 USE_PROCD=1
 
-PROG=/usr/bin/owdash
-CONF_DIR=/etc/owdash
+PROG=/usr/bin/wrtdeck
+CONF_DIR=/etc/wrtdeck
 CONF="$CONF_DIR/config.json"
 
 EXTRA_COMMANDS="token password"
@@ -28,7 +28,7 @@ start_service() {
 }
 
 stop_service() {
-	# 注册表与 Token 都持久化在 /etc/owdash，正常退出即可
+	# 注册表与 Token 都持久化在 /etc/wrtdeck，正常退出即可
 	:
 }
 

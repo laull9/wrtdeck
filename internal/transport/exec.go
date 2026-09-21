@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // exec_transport 执行本地程序，只接受 executable + argv，绝不经过 shell

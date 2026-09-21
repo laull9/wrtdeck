@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"owdash/internal/mqtt"
-	"owdash/internal/registry"
+	"wrtdeck/internal/mqtt"
+	"wrtdeck/internal/registry"
 )
 
 // mqtt_idle_timeout 是订阅全部取消后连接的保留时长，

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // Result 是一次提取的产物

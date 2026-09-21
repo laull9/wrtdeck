@@ -8,7 +8,7 @@
 ;(function () {
   var dark = false
   try {
-    var saved = window.localStorage.getItem('owdash.theme')
+    var saved = window.localStorage.getItem('wrtdeck.theme')
     dark =
       saved === 'dark' ||
       (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)

@@ -18,7 +18,7 @@ log_info release "交叉编译 linux/${target_arch}"
 CGO_ENABLED=0 GOOS=linux GOARCH="$target_arch" "$go_bin" build \
   -trimpath \
   -ldflags="-s -w -buildid= -X main.version=${version}" \
-  -o "dist/owdash-linux-${target_arch}" \
-  ./cmd/owdash
+  -o "dist/wrtdeck-linux-${target_arch}" \
+  ./cmd/wrtdeck
 
-report_artifact release "dist/owdash-linux-${target_arch}"
+report_artifact release "dist/wrtdeck-linux-${target_arch}"

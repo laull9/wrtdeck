@@ -34,7 +34,7 @@ var weak_passwords = map[string]bool{
 	"admin": true, "admin123": true, "administrator": true, "password": true,
 	"passw0rd": true, "12345678": true, "123456789": true, "1234567890": true,
 	"87654321": true, "qwertyui": true, "qwerty123": true, "letmein1": true,
-	"iloveyou": true, "wrtdeck": true, "owdash": true, "openwrt": true,
+	"iloveyou": true, "wrtdeck": true, "wrtdeck123": true, "openwrt": true,
 	"rootroot": true, "changeme": true, "secret12": true, "default1": true,
 }
 

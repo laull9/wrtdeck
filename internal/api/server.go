@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"time"
 
-	"owdash/internal/config"
-	"owdash/internal/engine"
-	"owdash/internal/registry"
-	"owdash/internal/state"
-	"owdash/internal/transport"
+	"wrtdeck/internal/config"
+	"wrtdeck/internal/engine"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
+	"wrtdeck/internal/transport"
 )
 
 // Server 汇总 API 层需要的全部依赖

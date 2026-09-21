@@ -43,13 +43,13 @@ build_web package
 
 cd "$root"
 mkdir -p dist
-bin="$root/dist/owdash-linux-${goarch}"
+bin="$root/dist/wrtdeck-linux-${goarch}"
 log_info package "交叉编译 linux/${goarch}"
 CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" "$go_bin" build \
   -trimpath \
   -ldflags="-s -w -buildid= -X main.version=${version}" \
   -o "$bin" \
-  ./cmd/owdash
+  ./cmd/wrtdeck
 
 # 校验产物确实是静态 ELF：动态链接的二进制在精简版 OpenWrt 上没有 libc 可用
 if ! file "$bin" | grep -q 'statically linked'; then
@@ -63,12 +63,12 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 PKG_ROOT="$work/rootfs"
-mkdir -p "$PKG_ROOT/usr/bin" "$PKG_ROOT/etc/init.d" "$PKG_ROOT/etc/owdash"
-install -m 0755 "$bin" "$PKG_ROOT/usr/bin/owdash"
-install -m 0755 "$root/packaging/openwrt/owdash.init" "$PKG_ROOT/etc/init.d/owdash"
+mkdir -p "$PKG_ROOT/usr/bin" "$PKG_ROOT/etc/init.d" "$PKG_ROOT/etc/wrtdeck"
+install -m 0755 "$bin" "$PKG_ROOT/usr/bin/wrtdeck"
+install -m 0755 "$root/packaging/openwrt/wrtdeck.init" "$PKG_ROOT/etc/init.d/wrtdeck"
 # 配置文件在设备上由 apk 的 protected_paths 与 ipk 的 conffiles 保护，升级都不覆盖用户改动
-install -m 0644 "$root/packaging/openwrt/files/etc/owdash/config.json" \
-  "$PKG_ROOT/etc/owdash/config.json"
+install -m 0644 "$root/packaging/openwrt/files/etc/wrtdeck/config.json" \
+  "$PKG_ROOT/etc/wrtdeck/config.json"
 
 # apk 的安装钩子：脚本名对应 abuild 约定的 .post-install 等条目
 PKG_APK_SCRIPTS="post-install=$root/packaging/openwrt/apk/post-install"
@@ -76,7 +76,7 @@ PKG_APK_SCRIPTS="$PKG_APK_SCRIPTS post-upgrade=$root/packaging/openwrt/apk/post-
 PKG_APK_SCRIPTS="$PKG_APK_SCRIPTS pre-deinstall=$root/packaging/openwrt/apk/pre-deinstall"
 
 # 元数据：两种格式共用，改一处即可
-PKG_NAME=owdash
+PKG_NAME=wrtdeck
 PKG_VERSION="$version"
 PKG_RELEASE="${PKG_RELEASE:-1}"
 PKG_DESC="WrtDeck 轻量设备控制面板"
@@ -85,7 +85,7 @@ PKG_DESC_LONG="通过注册表把 HTTP/TCP/UDP/MQTT 设备状态与控制命令�
 PKG_DEPS="ca-bundle"
 PKG_LICENSE="MIT"
 PKG_IPK_HOOKS="$root/packaging/openwrt/control"
-PKG_IPK_CONFFILES="/etc/owdash/config.json"
+PKG_IPK_CONFFILES="/etc/wrtdeck/config.json"
 
 case "$format" in
   apk)

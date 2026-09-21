@@ -4,13 +4,13 @@
 #      这是 apk 自己的读法，能完整列出条目就说明段边界与结束块位置都对；
 #   2. 交给 check_apk.py 做纯 shell 拿不到的断言：gzip 成员切分、签名、逐文件校验和。
 #
-# 用法：sh scripts/check-apk.sh [--preset=owdash|luci] [apk 路径]
+# 用法：sh scripts/check-apk.sh [--preset=wrtdeck|luci] [apk 路径]
 #       不传路径时自动取 dist/ 下对应预设的最新包
 
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-preset=owdash
+preset=wrtdeck
 apk=""
 
 for arg in "$@"; do
@@ -21,7 +21,7 @@ for arg in "$@"; do
 done
 
 case "$preset" in
-  owdash) glob='dist/owdash-*.apk' ;;
+  wrtdeck) glob='dist/wrtdeck-*.apk' ;;
   luci)   glob='dist/luci-app-wrtdeck-*.apk' ;;
   *) echo "未知的预设：$preset" >&2; exit 1 ;;
 esac
@@ -83,7 +83,7 @@ counts="$work/counts"
 set +e
 APK_CHECK_WORK="$work/py" "$(command -v python3 || echo /usr/bin/python3)" \
   "$root/scripts/check_apk.py" "$apk" --preset "$preset" \
-  --pubkey "$root/dist/owdash-local.rsa.pub" --counts-out "$counts"
+  --pubkey "$root/dist/wrtdeck-local.rsa.pub" --counts-out "$counts"
 py_status=$?
 set -e
 
@@ -102,6 +102,6 @@ if [ "$fail" -gt 0 ]; then
 fi
 
 case "$preset" in
-  owdash) echo "  apk 结构校验通过，可执行 apk add --allow-untrusted 安装" ;;
+  wrtdeck) echo "  apk 结构校验通过，可执行 apk add --allow-untrusted 安装" ;;
   *)      echo "  apk 结构校验通过" ;;
 esac

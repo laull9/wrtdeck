@@ -2,7 +2,7 @@
 # 卸载前：停止并取消开机自启
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
-/etc/init.d/owdash stop 2>/dev/null
-/etc/init.d/owdash disable 2>/dev/null
+/etc/init.d/wrtdeck stop 2>/dev/null
+/etc/init.d/wrtdeck disable 2>/dev/null
 
 exit 0

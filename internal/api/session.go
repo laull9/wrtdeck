@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"owdash/internal/config"
+	"wrtdeck/internal/config"
 )
 
 // 一次性登录码的参数：有效期只够浏览器完成一次跳转，容量上限避免被本地进程刷爆内存

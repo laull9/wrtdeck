@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"owdash/internal/template"
+	"wrtdeck/internal/template"
 )
 
 // secret_ref_pattern 匹配 ${secret.xxx} 形式的引用，供静态检查时剔除

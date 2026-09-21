@@ -5,8 +5,8 @@
 // 先记住、后又取消勾选的情况下两种存储会同时存在旧值，因此读取时两个都查，
 // 写入时先把两边都清干净。
 
-const token_key = 'owdash.token'
-const remember_key = 'owdash.token.remember'
+const token_key = 'wrtdeck.token'
+const remember_key = 'wrtdeck.token.remember'
 
 // 隐私模式下两种存储都可能写入失败，此时退化成只在当前页面内有效
 let memory_token = ''

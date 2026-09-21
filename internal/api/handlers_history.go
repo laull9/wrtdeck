@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"owdash/internal/registry"
-	"owdash/internal/state"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
 )
 
 // history_response 是信息源采样历史的返回体

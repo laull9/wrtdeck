@@ -23,7 +23,7 @@ help:
 	@echo "  make web           构建前端到 internal/webui/dist"
 	@echo "  make icons         从 assets/WrtDeck.png 重新生成站点图标与界面 logo"
 	@echo "  make backend       只构建后端（使用已有前端产物）"
-	@echo "  make build         构建前端 + 本机后端，产物在 dist/owdash"
+	@echo "  make build         构建前端 + 本机后端，产物在 dist/wrtdeck"
 	@echo ""
 	@echo "  make apk           打包 OpenWrt apk（25.12 及更新版本的默认格式）"
 	@echo "  make ipk           打包 OpenWrt ipk（24.10 及更早版本）"
@@ -69,7 +69,7 @@ backend:
 	@GO_BIN="$$(command -v go || echo /opt/homebrew/bin/go)" \
 	  "$$GO_BIN" build -trimpath \
 	  -ldflags="-s -w -X main.version=$(VERSION)" \
-	  -o dist/owdash ./cmd/owdash
+	  -o dist/wrtdeck ./cmd/wrtdeck
 
 # 完整构建
 build:
@@ -108,14 +108,14 @@ check-ipk-luci:
 
 # 完整打包测试：先校验结构，再模拟一次安装运行
 test-apk: check-apk
-	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/owdash-*.apk 2>/dev/null | head -1)"
+	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck-*.apk 2>/dev/null | head -1)"
 
 test-ipk: check-ipk
-	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/owdash_*.ipk 2>/dev/null | head -1)"
+	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck_*.ipk 2>/dev/null | head -1)"
 
 test-pkg: check-apk check-ipk check-luci check-ipk-luci
-	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/owdash-*.apk 2>/dev/null | head -1)"
-	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/owdash_*.ipk 2>/dev/null | head -1)"
+	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck-*.apk 2>/dev/null | head -1)"
+	@sh scripts/simulate-openwrt.sh "$$(ls -1 dist/wrtdeck_*.ipk 2>/dev/null | head -1)"
 
 # 直接运行
 run:

@@ -11,7 +11,7 @@ import (
 func derive_client_id(key string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
-	return fmt.Sprintf("owdash-%08x", h.Sum32())
+	return fmt.Sprintf("wrtdeck-%08x", h.Sum32())
 }
 
 // conn_key 计算连接池的键：broker 相同但身份或客户端 ID 不同的注册项必须分开连接

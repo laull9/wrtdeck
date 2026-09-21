@@ -3,7 +3,7 @@
 # 在没有 OpenWrt 设备与 SDK 的开发机上也能跑，是打包测试的核心断言。
 #
 # 两种预设：
-#   owdash 面板本体：二进制、init 脚本、默认配置
+#   wrtdeck 面板本体：二进制、init 脚本、默认配置
 #   luci   薄壳：menu.d / acl.d / rpcd 后端 / LuCI 视图，以及与面板前端的交接契约
 #
 # 用法：sh scripts/check-ipk.sh [ipk 路径]
@@ -13,7 +13,7 @@
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-preset=owdash
+preset=wrtdeck
 ipk=""
 
 for arg in "$@"; do
@@ -24,9 +24,9 @@ for arg in "$@"; do
 done
 
 case "$preset" in
-  owdash)
-    glob='dist/owdash_*.ipk'
-    package_name=owdash
+  wrtdeck)
+    glob='dist/wrtdeck_*.ipk'
+    package_name=wrtdeck
     ;;
   luci)
     glob='dist/luci-app-wrtdeck_*.ipk'
@@ -135,10 +135,10 @@ else
 fi
 
 case "$preset" in
-owdash)
-  assert_file /usr/bin/owdash -rwxr-xr-x
-  assert_file /etc/init.d/owdash -rwxr-xr-x
-  assert_file /etc/owdash/config.json -rw-r--r--
+wrtdeck)
+  assert_file /usr/bin/wrtdeck -rwxr-xr-x
+  assert_file /etc/init.d/wrtdeck -rwxr-xr-x
+  assert_file /etc/wrtdeck/config.json -rw-r--r--
 
   # ── 4. 安装钩子与配置文件声明 ────────────────────────────────────────────
   step "4. 安装钩子与 conffiles"
@@ -146,16 +146,16 @@ owdash)
   assert "prerm 存在" test -f "$work/control/prerm"
   assert "postinst 语法合法" sh -n "$work/control/postinst"
   assert "prerm 语法合法" sh -n "$work/control/prerm"
-  if grep -q '^/etc/owdash/config\.json$' "$work/control/conffiles"; then
-    ok "conffiles 声明 /etc/owdash/config.json（升级不覆盖用户配置）"
+  if grep -q '^/etc/wrtdeck/config\.json$' "$work/control/conffiles"; then
+    ok "conffiles 声明 /etc/wrtdeck/config.json（升级不覆盖用户配置）"
   else
-    ng "conffiles 未声明 /etc/owdash/config.json"
+    ng "conffiles 未声明 /etc/wrtdeck/config.json"
   fi
   if field Depends | grep -q 'ca-bundle'; then ok "依赖声明含 ca-bundle（TLS 需要）"; else ng "依赖未声明 ca-bundle"; fi
 
   # ── 5. 二进制可运行性 ────────────────────────────────────────────────────
   step "5. 二进制属性"
-  elf="$work/data/usr/bin/owdash"
+  elf="$work/data/usr/bin/wrtdeck"
   bin_info="$(file -b "$elf")"
   echo "  file: $bin_info"
   case "$bin_info" in
@@ -184,7 +184,7 @@ owdash)
 
   # ── 6. init 脚本契约 ─────────────────────────────────────────────────────
   step "6. procd init 脚本"
-  init="$work/data/etc/init.d/owdash"
+  init="$work/data/etc/init.d/wrtdeck"
   assert "语法合法" sh -n "$init"
   for token in 'USE_PROCD=1' 'procd_open_instance' 'procd_set_param command' \
                'procd_set_param respawn' 'procd_close_instance' 'start_service' 'stop_service'; do
@@ -206,11 +206,11 @@ owdash)
 
   # ── 7. 默认配置 ──────────────────────────────────────────────────────────
   step "7. 默认配置"
-  conf="$work/data/etc/owdash/config.json"
+  conf="$work/data/etc/wrtdeck/config.json"
   assert "JSON 语法合法" python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$conf"
   assert_has "$conf" '"listen"' "含 listen 字段"
-  if grep -q '"data_dir": *"/etc/owdash"' "$conf"; then
-    ok "data_dir 指向 /etc/owdash（与 init 一致）"
+  if grep -q '"data_dir": *"/etc/wrtdeck"' "$conf"; then
+    ok "data_dir 指向 /etc/wrtdeck（与 init 一致）"
   else
     ng "data_dir 与 init 脚本不一致"
   fi
@@ -223,7 +223,7 @@ luci)
 
   # ── 4. 依赖与安装钩子 ────────────────────────────────────────────────────
   step "4. 依赖与安装钩子"
-  for dep in luci-base owdash; do
+  for dep in luci-base wrtdeck; do
     if field Depends | grep -q "$dep"; then ok "依赖声明含 $dep"; else ng "依赖未声明 $dep"; fi
   done
   # rpcd 只在启动时读 ACL 与后端脚本，装完不重启就会出现「能点进去、一调就报权限不足」
@@ -264,7 +264,7 @@ luci)
   session="$root/web/src/lib/handoff.ts"
   server="$root/internal/api/server.go"
   if [ -f "$session" ]; then
-    for message in owdash.handoff owdash.ready owdash.accepted; do
+    for message in wrtdeck.handoff wrtdeck.ready wrtdeck.accepted; do
       if grep -q "$message" "$panel" && grep -q "$message" "$session"; then
         ok "消息名 $message 在薄壳与前端两侧一致"
       else

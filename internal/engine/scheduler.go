@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"owdash/internal/registry"
-	"owdash/internal/state"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
 )
 
 // stale_factor 表示超过多少个轮询周期没更新就把信息源降级为 stale

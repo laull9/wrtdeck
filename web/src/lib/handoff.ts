@@ -7,11 +7,11 @@
 // 因此它出现在地址栏或消息里都不会变成一条可复用的后门。
 
 // 父窗口用来交接凭据的消息类型
-const handoff_message = 'owdash.handoff'
+const handoff_message = 'wrtdeck.handoff'
 // 面板告诉父窗口「我加载好了，可以发了」，父窗口收到后重发一次交接消息
-const ready_message = 'owdash.ready'
+const ready_message = 'wrtdeck.ready'
 // 面板告诉父窗口「凭据已处理，不用再发」，父窗口据此停止重试
-const accepted_message = 'owdash.accepted'
+const accepted_message = 'wrtdeck.accepted'
 
 // 等待父窗口交接的最长时间，超时就继续走后面的引导路径
 const handoff_wait_ms = 1500

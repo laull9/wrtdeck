@@ -576,13 +576,13 @@ data: {...}
 不使用 SQLite。
 
 ```text
-/etc/owdash/
+/etc/wrtdeck/
 ├── config.json
 ├── registry.json
 ├── secrets.json          口令散列 + API Token（mode 0600）
 └── tls-self-signed.crt   TLS 启用且未自带证书时自动生成
 
-/tmp/owdash/
+/tmp/wrtdeck/
 └── runtime
 ```
 
@@ -725,9 +725,9 @@ code：单次使用、60 秒过期、用后即焚
 ## 14. Go 工程结构
 
 ```text
-owdash/
+wrtdeck/
 ├── cmd/
-│   └── owdash/
+│   └── wrtdeck/
 │       └── main.go
 │
 ├── internal/
@@ -828,8 +828,8 @@ GOARCH=arm64 \
 go build \
   -trimpath \
   -ldflags="-s -w -buildid=" \
-  -o dist/owdash \
-  ./cmd/owdash
+  -o dist/wrtdeck \
+  ./cmd/wrtdeck
 ```
 
 对于 OpenWrt ARM64，这是最优先的模式。

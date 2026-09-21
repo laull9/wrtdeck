@@ -108,7 +108,7 @@ async function submit(): Promise<void> {
           <span class="text-ink-ghost">忘记口令？</span>
         </div>
         <p class="mt-1.5 text-sm leading-relaxed text-ink-faint">
-          在设备上执行 <code class="code-chip">/etc/init.d/owdash password</code> 可重置口令。
+          在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck password</code> 可重置口令。
         </p>
       </form>
 

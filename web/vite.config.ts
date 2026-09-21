@@ -4,7 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 
 // 开发期后端地址，可通过环境变量覆盖
-const backend = process.env.OWDASH_BACKEND ?? 'http://127.0.0.1:8080'
+const backend = process.env.WRTDECK_BACKEND ?? 'http://127.0.0.1:8080'
 
 // https://vite.dev/config/
 export default defineConfig({

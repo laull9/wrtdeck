@@ -4,12 +4,12 @@
 包体是签名段 + 控制段 + 数据段的 gzip 流拼接，细节见 apk_tar 的模块说明。
 
 用法：
-  python3 scripts/apk_build.py --root <payload 目录> --out dist/owdash-1.0.0-r1.apk \
-      --name owdash --version 1.0.0 --release 1 --arch aarch64_cortex-a53 \
+  python3 scripts/apk_build.py --root <payload 目录> --out dist/wrtdeck-1.0.0-r1.apk \
+      --name wrtdeck --version 1.0.0 --release 1 --arch aarch64_cortex-a53 \
       --desc "WrtDeck 轻量设备控制面板" --depend ca-bundle \
       --script post-install=packaging/apk/post-install
 
-签名（可选）：--sign-key packaging/keys/owdash-local.rsa --sign-name owdash-local.rsa.pub
+签名（可选）：--sign-key packaging/keys/wrtdeck-local.rsa --sign-name wrtdeck-local.rsa.pub
 同时写入 .SIGN.RSA.（SHA-1）与 .SIGN.RSA256.（SHA-256）两条签名，
 新老 apk-tools 都能验；公钥需放到设备的 /etc/apk/keys/ 下才被信任。
 """

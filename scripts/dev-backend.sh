@@ -10,4 +10,4 @@ go_bin="$(find_go)"
 
 cd "$root"
 log_info backend "启动 Go 服务（dev 模式）"
-exec "$go_bin" run ./cmd/owdash -dev "$@"
+exec "$go_bin" run ./cmd/wrtdeck -dev "$@"

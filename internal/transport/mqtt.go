@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // ErrMQTTSubscribePush 表示订阅型信息源由 broker 主动推送，不能按轮询方式采集

@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"owdash/internal/registry"
-	"owdash/internal/state"
-	"owdash/internal/transport"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
+	"wrtdeck/internal/transport"
 )
 
 // sub_retry_interval 是订阅建立失败后的重试间隔

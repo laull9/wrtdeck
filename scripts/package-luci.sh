@@ -5,7 +5,7 @@
 #   1. 在 LuCI 的「服务」下加一个 WrtDeck 菜单项；
 #   2. 给 rpcd 装一个后端（状态查询、一次性登录码、服务启停）；
 #   3. 把面板嵌进 iframe，并用 postMessage 把登录码交给它。
-# 面板本体（owdash）是独立包，见 package-openwrt.sh；两者互不依赖对方的版本。
+# 面板本体（wrtdeck）是独立包，见 package-openwrt.sh；两者互不依赖对方的版本。
 #
 # 用法：
 #   sh scripts/package-luci.sh                       # 默认只出 apk
@@ -46,8 +46,8 @@ PKG_RELEASE="${PKG_RELEASE:-1}"
 PKG_DESC="LuCI 里的 WrtDeck 入口：查看服务状态并免密进入面板"
 PKG_DESC_LONG="在 LuCI 的「服务」菜单下增加 WrtDeck 项，把面板嵌进页面；
 登录 LuCI 后进入面板无需再手工填写 API Token。
-面板本体由 owdash 包提供，本包只做入口与凭据交接。"
-PKG_DEPS="luci-base owdash"
+面板本体由 wrtdeck 包提供，本包只做入口与凭据交接。"
+PKG_DEPS="luci-base wrtdeck"
 PKG_LICENSE="MIT"
 PKG_APK_SCRIPTS="post-install=$root/packaging/luci/hooks/post-install"
 PKG_IPK_SCRIPTS="postinst=$root/packaging/luci/hooks/post-install"

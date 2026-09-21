@@ -1,4 +1,4 @@
-// owdash 是运行在 OpenWrt 上的轻量设备控制与信息 Dashboard。
+// wrtdeck 是运行在 OpenWrt 上的轻量设备控制与信息 Dashboard。
 package main
 
 import (
@@ -17,14 +17,14 @@ import (
 	"syscall"
 	"time"
 
-	"owdash/internal/api"
-	"owdash/internal/certs"
-	"owdash/internal/config"
-	"owdash/internal/engine"
-	"owdash/internal/registry"
-	"owdash/internal/state"
-	"owdash/internal/transport"
-	"owdash/internal/webui"
+	"wrtdeck/internal/api"
+	"wrtdeck/internal/certs"
+	"wrtdeck/internal/config"
+	"wrtdeck/internal/engine"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/state"
+	"wrtdeck/internal/transport"
+	"wrtdeck/internal/webui"
 )
 
 // version 由构建脚本通过 -ldflags 注入
@@ -308,7 +308,7 @@ func banner(cfg *config.Config, opts options, secrets *config.Secrets, tls_resul
 		if secrets.FromEnv() {
 			log.Printf("API Token: 来自环境变量 %s", cfg.Auth.TokenEnv)
 		} else {
-			log.Printf("API Token: 见 %s（/etc/init.d/owdash token 可直接打印）", cfg.SecretsPath())
+			log.Printf("API Token: 见 %s（/etc/init.d/wrtdeck token 可直接打印）", cfg.SecretsPath())
 		}
 		if secrets.MustChange() {
 			// 这里刻意把默认口令打出来：它本来就是写在文档与安装提示里的公开信息，

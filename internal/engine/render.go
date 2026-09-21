@@ -1,8 +1,8 @@
 package engine
 
 import (
-	"owdash/internal/registry"
-	"owdash/internal/template"
+	"wrtdeck/internal/registry"
+	"wrtdeck/internal/template"
 )
 
 // render_transport 渲染传输配置里所有允许写模板的字段，返回一份新配置

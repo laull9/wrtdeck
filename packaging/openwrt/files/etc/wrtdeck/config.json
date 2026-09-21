@@ -1,6 +1,6 @@
 {
   "listen": "0.0.0.0:8080",
-  "data_dir": "/etc/owdash",
+  "data_dir": "/etc/wrtdeck",
   "auth": {},
   "tls": {
     "enabled": false

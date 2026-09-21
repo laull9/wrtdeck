@@ -139,7 +139,7 @@ async function submit(): Promise<void> {
         </div>
 
         <p v-if="props.forced && auth.token" class="field-hint mt-3">
-          也可以在设备上执行 <code class="code-chip">/etc/init.d/owdash password</code> 重置。
+          也可以在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck password</code> 重置。
         </p>
       </DialogContent>
     </DialogPortal>

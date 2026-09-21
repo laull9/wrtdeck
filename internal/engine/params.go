@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // ValidateParams 校验运行时参数，并补齐默认值，返回归一化后的参数表

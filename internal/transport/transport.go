@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // 载荷编码方式

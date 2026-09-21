@@ -3,8 +3,8 @@
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
 # 用户手动 disable 过就不要擅自拉起来，升级不应改变人为选择的状态
-if ls /etc/rc.d/S*owdash >/dev/null 2>&1; then
-	/etc/init.d/owdash restart
+if ls /etc/rc.d/S*wrtdeck >/dev/null 2>&1; then
+	/etc/init.d/wrtdeck restart
 fi
 
 exit 0

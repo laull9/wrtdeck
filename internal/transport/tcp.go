@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // tcp_transport 负责执行一次 TCP 交互，可选读取一次响应

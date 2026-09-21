@@ -16,8 +16,8 @@
 #   PKG_IPK_HOOKS   ipk 钩子目录，其中的 postinst / prerm / conffiles 会被复制进包
 #   PKG_IPK_CONFFILES 需要声明为配置文件的路径，空格分隔（由本文件生成 conffiles）
 #
-# 用法：PKG_NAME=owdash ... pack_apk dist/owdash-1.0.0-r1.apk
-#                     PKG_NAME=owdash ... pack_ipk dist/owdash_1.0.0-1_arm64.ipk
+# 用法：PKG_NAME=wrtdeck ... pack_apk dist/wrtdeck-1.0.0-r1.apk
+#                     PKG_NAME=wrtdeck ... pack_ipk dist/wrtdeck_1.0.0-1_arm64.ipk
 #
 # 所有函数内部的临时变量一律用 local 声明。这些函数是顺序调用的，
 # 曾经踩过的坑正是「助手函数覆盖了调用方记着输出路径的变量」，

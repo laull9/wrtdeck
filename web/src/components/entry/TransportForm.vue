@@ -215,7 +215,7 @@ function remove_arg(index: number): void {
 
       <div class="grid gap-3 sm:grid-cols-3">
         <FormField label="客户端 ID" hint="留空时由服务端按 Broker 生成">
-          <input v-model="transport.mqtt_client_id" class="field readout" placeholder="owdash" />
+          <input v-model="transport.mqtt_client_id" class="field readout" placeholder="wrtdeck" />
         </FormField>
         <FormField label="用户名">
           <input v-model="transport.mqtt_username" class="field readout" />

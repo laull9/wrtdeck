@@ -6,6 +6,8 @@
 
 WrtDeck 是一个运行在 OpenWrt 上的轻量级设备控制面板，用统一配置把 HTTP、TCP、UDP、MQTT 等设备状态与控制命令动态变成 Dashboard 卡片和操作按钮。
 
+命名统一：面板的包名、二进制、init 脚本与配置目录都是 `wrtdeck`（`/usr/bin/wrtdeck`、`/etc/init.d/wrtdeck`、`/etc/wrtdeck/`），LuCI 薄壳包是 `luci-app-wrtdeck`。
+
 - 架构设计：[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - 安装部署：[docs/INSTALL.md](./docs/INSTALL.md)
 - 协作约定：[AGENTS.md](./AGENTS.md)
@@ -60,7 +62,7 @@ make dev-backend    # 只启动后端（dev 模式，关闭鉴权）
 make dev-frontend   # 只启动前端
 make web            # 只构建前端到 internal/webui/dist
 make icons          # 从 assets/WrtDeck.png 重新生成站点图标与界面 logo
-make build          # 前端 + 本机后端 → dist/owdash
+make build          # 前端 + 本机后端 → dist/wrtdeck
 make release        # 交叉编译 OpenWrt linux/arm64 静态 ELF
 
 make apk            # 打包 apk（OpenWrt 25.12 起的默认格式）
@@ -89,9 +91,9 @@ make clean          # 清理构建产物
 - **API Token**：首启同时生成 43 字符随机 Token，写入 `secrets.json`（权限 0600），供脚本、设备本地调用或面板的「用 Token 登录」入口使用。
 
 ```bash
-./dist/owdash -config /etc/owdash/config.json
-./dist/owdash -print-token                 # 打印当前 API Token
-./dist/owdash -reset-password -            # 从 stdin 读新口令并重置（- 可换成直接写值）
+./dist/wrtdeck -config /etc/wrtdeck/config.json
+./dist/wrtdeck -print-token                 # 打印当前 API Token
+./dist/wrtdeck -reset-password -            # 从 stdin 读新口令并重置（- 可换成直接写值）
 ```
 
 口令用 PBKDF2-HMAC-SHA256（210000 轮、16 字节盐）存储，登录成功后换发**短期会话凭据**（43 字符随机、TTL 默认 12 小时、驻内存）。会话凭据默认只存在浏览器会话存储里，勾选「记住」才落到 localStorage。
@@ -115,7 +117,7 @@ make clean          # 清理构建产物
 界面有深色与浅色两套配色，右上角最右侧的月亮 / 太阳按钮用于切换。
 
 - **默认跟随系统**：没有手动切过时，`prefers-color-scheme` 变化会实时生效。
-- **手动切换后固定**：点击按钮会把选择写入 `localStorage` 的 `owdash.theme`，此后不再跟随系统。想恢复跟随系统，清掉该键即可。
+- **手动切换后固定**：点击按钮会把选择写入 `localStorage` 的 `wrtdeck.theme`，此后不再跟随系统。想恢复跟随系统，清掉该键即可。
 - **不闪屏**：主题在首帧前由 `public/theme-init.js` 定下来，刷新不会先亮后暗。它单独成文件而**不写成内联脚本**，是为了配合 CSP 的 `script-src 'self'`。
 - **配色集中在一处**：组件里只写 `bg-surface` / `text-ink-body` 这类语义名，实际色值集中在 `web/src/style.css` 的 `:root` 与 `:root.dark` 两块，新增主题不需要改组件。
 
@@ -144,7 +146,7 @@ make clean          # 清理构建产物
 ## 目录结构
 
 ```text
-cmd/owdash/           进程入口
+cmd/wrtdeck/          进程入口
 internal/
   api/                HTTP 路由、中间件、SSE、会话与登录节流
   certs/              TLS 证书准备（自带或自签）

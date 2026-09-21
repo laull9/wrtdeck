@@ -1,7 +1,7 @@
 #!/bin/sh
 # WrtDeck 的 rpcd 后端：给 LuCI 薄壳提供状态查询、一次性登录码与服务启停。
 #
-# 它由 rpcd 以 root 身份调用，因此能读到 /etc/owdash/secrets.json 这一层凭据；
+# 它由 rpcd 以 root 身份调用，因此能读到 /etc/wrtdeck/secrets.json 这一层凭据；
 # 谁有权调用由 /usr/share/rpcd/acl.d/luci-app-wrtdeck.json 限定（默认只有 root 登录能拿到）。
 #
 # 交接设计：浏览器的地址栏与历史里不放任何长期凭据。
@@ -11,8 +11,8 @@
 
 . /usr/share/libubox/jshn.sh
 
-PROG=/usr/bin/owdash
-CONF_DIR=/etc/owdash
+PROG=/usr/bin/wrtdeck
+CONF_DIR=/etc/wrtdeck
 CONF="$CONF_DIR/config.json"
 # 只在设备的环回地址上申请登录码，避免依赖网卡地址推导
 API_BASE="http://127.0.0.1"
@@ -149,15 +149,15 @@ do_control() {
 			;;
 	esac
 
-	if /etc/init.d/owdash "$_action" >/dev/null 2>&1; then
+	if /etc/init.d/wrtdeck "$_action" >/dev/null 2>&1; then
 		json_init
 		json_add_boolean "ok" 1
-		json_add_string "message" "owdash $_action 已执行"
+		json_add_string "message" "wrtdeck $_action 已执行"
 		json_dump
 	else
 		json_init
 		json_add_boolean "ok" 0
-		json_add_string "message" "owdash $_action 执行失败，请看 logread -e owdash"
+		json_add_string "message" "wrtdeck $_action 执行失败，请看 logread -e wrtdeck"
 		json_dump
 	fi
 }

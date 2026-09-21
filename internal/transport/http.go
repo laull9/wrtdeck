@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"owdash/internal/registry"
+	"wrtdeck/internal/registry"
 )
 
 // http_transport 负责执行 HTTP 调用
@@ -55,7 +55,7 @@ func (h *http_transport) Do(ctx context.Context, spec registry.TransportSpec, op
 	if cfg.Body != "" && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("User-Agent", "owdash/1.0")
+	req.Header.Set("User-Agent", "wrtdeck/1.0")
 
 	resp, err := h.client.Do(req)
 	if err != nil {

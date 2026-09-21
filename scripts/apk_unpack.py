@@ -5,7 +5,7 @@
 因此「段顺序错了」「控制段多写了结束块」这类问题都会在这里暴露。
 
 用法：
-  python3 scripts/apk_unpack.py --in dist/owdash-1.0.0-r1.apk --out /tmp/apk
+  python3 scripts/apk_unpack.py --in dist/wrtdeck-1.0.0-r1.apk --out /tmp/apk
 产出：
   /tmp/apk/rootfs/...      数据段解开后的文件树
   /tmp/apk/control/...     控制段条目（.PKGINFO 与安装脚本）
