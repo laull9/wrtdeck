@@ -1,0 +1,25 @@
+# 依赖目录
+node_modules/
+
+# 构建产物：根目录放发布二进制；前端产物会通过 embed 进二进制，只保留占位文件
+/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# 运行时数据：注册表、密钥、运行配置
+/data/
+
+# 编辑器与系统文件
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# 工具本地的项目记忆与配置，不入库
+/.workbuddy/
+
+# 编译与类型检查缓存
+*.tsbuildinfo
+*.tmp
+*.log

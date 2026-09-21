@@ -1,0 +1,112 @@
+@import 'tailwindcss';
+
+/* 深色控制台基调，直接给 body 定色避免首屏闪白 */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #08090c;
+  color: #d4d4d8;
+  font-family:
+    system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 读数统一使用等宽数字，避免轮询刷新时宽度抖动 */
+.readout {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 细滚动条，避免在窄面板里占用过多宽度 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border-radius: 4px;
+}
+
+/* 表单与按钮的公共样式，放在 components 层以便被工具类覆盖 */
+@layer components {
+  /* 文本、数字、下拉等单行输入 */
+  .field {
+    @apply w-full rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-base text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  /* 多行输入，与 .field 叠加使用 */
+  .field-area {
+    @apply resize-y leading-relaxed;
+  }
+
+  /* 等宽代码输入，与 .field 叠加使用，用于 JSON、载荷、正则等 */
+  .field-code {
+    @apply font-mono text-sm;
+  }
+
+  /* 复选框与单选点 */
+  .field-check {
+    @apply h-4 w-4 shrink-0 rounded border-zinc-600 bg-black/40 accent-zinc-300;
+  }
+
+  /* 表单标签 */
+  .field-label {
+    @apply text-sm font-medium text-zinc-300;
+  }
+
+  /* 表单项说明文字 */
+  .field-hint {
+    @apply text-sm leading-relaxed text-zinc-500;
+  }
+
+  /* 表单项错误文字 */
+  .field-error {
+    @apply text-sm leading-relaxed text-rose-400;
+  }
+
+  /* 通用按钮基类 */
+  .btn {
+    @apply inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-base font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 小号按钮，用于表格行内操作 */
+  .btn-sm {
+    @apply px-2.5 py-1 text-sm;
+  }
+
+  /* 主按钮 */
+  .btn-primary {
+    @apply bg-zinc-100 text-zinc-900 hover:bg-white;
+  }
+
+  /* 描边按钮 */
+  .btn-outline {
+    @apply border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100;
+  }
+
+  /* 纯文字按钮 */
+  .btn-ghost {
+    @apply text-zinc-400 hover:text-zinc-200;
+  }
+
+  /* 危险操作按钮 */
+  .btn-danger {
+    @apply text-rose-400/80 hover:bg-rose-950/60 hover:text-rose-300;
+  }
+
+  /* 卡片容器 */
+  .panel {
+    @apply rounded-xl border border-zinc-800 bg-zinc-900/40;
+  }
+}

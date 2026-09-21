@@ -1,0 +1,34 @@
+#!/bin/sh /etc/rc.common
+# WrtDeck 在 OpenWrt 上的 procd 启动脚本
+
+START=95
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/owdash
+CONF=/etc/owdash/config.json
+DATA=/etc/owdash
+
+start_service() {
+	# 首次启动时生成配置与随机 API Token
+	mkdir -p "$DATA" /tmp/owdash
+
+	procd_open_instance
+	procd_set_param command "$PROG" -config "$CONF"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param limits nofile="1024 1024"
+	procd_close_instance
+}
+
+stop_service() {
+	# 正常退出即可，注册表与 Token 都持久化在 /etc/owdash
+	:
+}
+
+reload_service() {
+	# 配置与注册表都通过 API 热更新，重启进程即可重新加载配置
+	stop
+	start
+}

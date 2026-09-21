@@ -1,0 +1,4 @@
+# pnpm 12 起依赖构建脚本需要显式放行，vue-demi 必须执行 postinstall 才能适配 Vue 版本
+allowBuilds:
+  vue-demi: true
+  esbuild: true
