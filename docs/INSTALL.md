@@ -33,11 +33,11 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 ```sh
 # OpenWrt 25.12 及以上（apk）
 apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
-apk add --allow-untrusted ./wrtdeck-1.0.0-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
-opkg install ./wrtdeck_1.0.0-1_aarch64_cortex-a53.ipk
+opkg install ./wrtdeck_1.0.0-rc2-1_aarch64_cortex-a53.ipk
 ```
 
 > **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
@@ -45,7 +45,7 @@ opkg install ./wrtdeck_1.0.0-1_aarch64_cortex-a53.ipk
 > 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
 >
 > ```sh
-> apk add --allow-untrusted ./wrtdeck-1.0.0-r1.apk ./luci-app-wrtdeck-1.0.0-r1.apk
+> apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk ./luci-app-wrtdeck-1.0.0-rc2-r1.apk
 > ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
@@ -60,24 +60,30 @@ opkg install ./wrtdeck_1.0.0-1_aarch64_cortex-a53.ipk
 
 ### 可选：LuCI 薄壳
 
-如果设备上装了 LuCI，可以再装一个几十 KB 的 `luci-app-wrtdeck`，在 LuCI 菜单里得到一个「WrtDeck」入口，点一下即可**免密一跳进入面板**（不用手输口令或 Token，见第 6 节）。
+如果设备上装了 LuCI，可以再装一个十几 KB 的 `luci-app-wrtdeck`，在 LuCI 菜单的「服务 → WrtDeck」里得到**原样内嵌的面板页面**——不是一个跳转链接，而且登录 LuCI 之后进去不用再输一次面板口令。
 
 先确认面板包已装好（`apk list -I | grep wrtdeck`），再装薄壳：
 
 ```sh
-apk add --allow-untrusted ./luci-app-wrtdeck-1.0.0-r1.apk   # apk 设备
-opkg install ./luci-app-wrtdeck_1.0.0-1_all.ipk             # ipk 设备
+apk add --allow-untrusted ./luci-app-wrtdeck-1.0.0-rc2-r1.apk   # apk 设备
+opkg install ./luci-app-wrtdeck_1.0.0-rc2-1_all.ipk             # ipk 设备
 ```
 
-薄壳只有 rpcd 接口与一个前端视图，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
+薄壳只有 rpcd 后端、一个 LuCI 视图、一份菜单与一个 CGI 网关入口，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
+
+装完薄壳后，面板的对外入口就交给 LuCI 了：面板本体默认只监听 `127.0.0.1:8080`，局域网里直连 `<设备IP>:8080` 是不通的。这是**有意的**，理由见下面「LuCI 内嵌与同源网关」。
 
 ## 3. 首次登录
 
-服务默认监听 `0.0.0.0:8080`，OpenWrt 默认防火墙对 LAN 放行 input，因此同网段浏览器直接访问即可：
+装了薄壳的运行方式：登录 LuCI 后打开「服务 → WrtDeck」，面板会免登录直接进来。
 
-```text
-http://<设备IP>:8080
+没装薄壳的运行方式：面板默认只监听回环地址，需要先把 `config.json` 的 `listen` 改成 `0.0.0.0:8080` 再重启服务（命令见第 4 节）：
+
+```json
+{ "listen": "0.0.0.0:8080" }
 ```
+
+OpenWrt 默认防火墙对 LAN 放行 input，因此同网段浏览器直接访问 `http://<设备IP>:8080` 即可。
 
 首次启动会写入两样凭据：
 
@@ -113,9 +119,12 @@ cat /etc/wrtdeck/secrets.json
 /etc/init.d/wrtdeck disable     # 取消自启
 /etc/init.d/wrtdeck token       # 打印当前 API Token
 /etc/init.d/wrtdeck password    # 重置登录口令（忘记口令时用）
+/etc/init.d/wrtdeck export_web  # 把面板页面重新导出到 /www/wrtdeck
 ```
 
 `password` 会从标准输入读一个新口令，重置后标记为「待修改」，下次登录仍需再改一次。它是设备主人忘记口令时**唯一的找回手段**，因此需要有 root shell 才能执行。
+
+`export_web` 在 `start` 时自动执行一次（页面编在二进制里，所以页面与二进制永远同版本）；LuCI 里出现空白框时可以手动重跑一次。子命令名用下划线而不是短横线，因为 `rc.common` 会把子命令名直接当函数名调用，而短横线不是合法的 shell 标识符字符——写成 `export-web()` 会让整个 init 脚本在任何子命令下都报语法错误。
 
 进程由 procd 托管，异常退出后按 5 秒间隔最多重启 5 次（1 小时后计数重置）；文件描述符上限提到 1024。
 
@@ -133,7 +142,7 @@ logread -e wrtdeck -f
 
 ```json
 {
-  "listen": "0.0.0.0:8080",
+  "listen": "127.0.0.1:8080",
   "data_dir": "/etc/wrtdeck",
   "auth": {
     "session_ttl_minutes": 720,
@@ -143,6 +152,7 @@ logread -e wrtdeck -f
   "tls": {
     "enabled": false
   },
+  "gateway": {},
   "exec": { "enabled": true },
   "limits": { "history_limit": 120 },
   "workers": { "source": 4, "action": 4 },
@@ -158,8 +168,11 @@ logread -e wrtdeck -f
 
 | 字段 | 说明 |
 | --- | --- |
-| `listen` | 只在本机访问可改成 `127.0.0.1:8080`，再前置 Nginx |
+| `listen` | 默认 `127.0.0.1:8080`，只监听回环，对外入口由 LuCI 承担。要让局域网直连就改成 `0.0.0.0:8080`，或改成 `127.0.0.1:8080` 后前置 Nginx |
 | `data_dir` | 注册表、密钥、配置与自签证书的落盘目录，改完要同步改 `/etc/init.d/wrtdeck` 里的 `CONF_DIR` |
+| `gateway.*` | 同源 CGI 网关。留空即按默认工作：上游地址由 `listen` 推导，校验 LuCI 会话后注入凭据 |
+| `gateway.upstream` | 面板本体地址，留空时按 `listen` 推出回环地址；面板本体与网关分处两个进程时才需要显式指定 |
+| `gateway.verify_luci_session` | 默认 `true`。设为 `false` 时**不会注入凭据**（不校验却注入等于把凭据送给所有能访问设备 Web 端口的人），面板退化成需要自己登录 |
 | `auth.disabled` | 设为 `true` 关闭鉴权，**仅限本机调试** |
 | `auth.token_env` | 从环境变量读 Token，不再落盘。见下节 |
 | `auth.session_ttl_minutes` | 登录会话有效期，默认 720 分钟（12 小时） |
@@ -209,6 +222,7 @@ export WRTDECK_TOKEN='你的Token'
 | 安全响应头 | `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Permissions-Policy` 收窄 |
 | 禁缓存 | `/api/` 一律 `Cache-Control: no-store` |
 | 反节流绕过 | 来源判定**刻意忽略 `X-Forwarded-For`**，避免伪造请求头绕过锁定 |
+| 代理感知 | 只认 `X-Forwarded-For` / `X-Forwarded-Host` / `X-Real-Ip` **出现与否**，不采信其值；经代理进来时不再当作设备本机，同源网关绕不过这两条 |
 
 ### 启用 HTTPS
 
@@ -244,9 +258,67 @@ logread -e wrtdeck | grep -i fingerprint
 
 HSTS 只在**确认走的是 TLS** 时才下发，因此不会误伤明文部署。
 
+### LuCI 内嵌与同源网关
+
+这是 rc2 的核心变化。之前 LuCI 里只有一个跳转链接，而面板地址要靠浏览器去拼「设备地址 + 8080」——一旦设备被反向代理到公网域名，这个地址必然连不通，而且浏览器的加密方式与面板自己的对不上。现在面板被**原样复刻到 LuCI 所在的源上**：
+
+| 部分 | 挂在哪 | 谁在服务 |
+| --- | --- | --- |
+| 面板页面与资源 | `/www/wrtdeck/` | 设备自带的 Web 服务器（uhttpd），当静态文件发 |
+| 面板接口 | `<cgi_prefix>/wrtdeck-api` | 同源下的 CGI，转交给面板本体 |
+| 面板本体 | `127.0.0.1:8080` | 只监听回环，不对局域网另开端口 |
+
+面板本体启动时把内嵌的前端资源导出到 `/www/wrtdeck`（`wrtdeck -export-web`，init 里 `start_service` 会调用）。导出的页面用的是**相对路径**，因此既能挂在 `/wrtdeck/` 下，也能被别的前缀布置，页面自己不知道也不需要知道设备地址。
+
+`cgi_prefix` 是可配置的（`uci get uhttpd.main.cgi_prefix`）。包内固定把网关放在 `/www/cgi-bin/`，装完由安装脚本按设备实际的前缀补一个符号链接：
+
+```sh
+/etc/init.d/wrtdeck export_web      # 页面没了？手动重新导出一次
+ls -l /www/wrtdeck/index.html       # 页面是否就位
+ls -l /www/cgi-bin/wrtdeck-api      # 网关入口是否就位
+uci get uhttpd.main.cgi_prefix      # 设备实际的 CGI 前缀
+```
+
+凭据交接有两条路，按顺序尝试，都不成才退回收口令登录页：
+
+1. **同源网关代签**：网关先向 rpcd 问一句「这个浏览器带的 LuCI 会话登录了吗」，证实通过才替它补上面板凭据。浏览器手里始终没有面板凭据，界面上会显示一个「LuCI 免登录」小标记。
+2. **一次性登录码**：rpcd 用设备本机的 Token 换一张 60 秒有效、只能兑一次的登录码，父窗口用 `postMessage` 递给面板。地址栏与浏览器历史里不放任何长期凭据。
+
+两条路都**不会因为认不出人就把门打开**：网关校验不通过就只是原样转发，面板自己那道鉴权照常生效。
+
+排障对照：
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| LuCI 里是一个空白框 | 面板页面没导出。重启服务（`/etc/init.d/wrtdeck restart`）或用手动导出命令；确认 `/www` 可写 |
+| 面板能打开但仍要求输口令 | 网关没就绪或 LuCI 会话没被认出来。看 `uci get uhttpd.main.cgi_prefix` 是否为空；确认 `/www/<前缀>/wrtdeck-api` 存在且可执行 |
+| 界面显示「同源接口网关不在 Web 服务器的 CGI 前缀下」 | 同上，重装或手动补一次链接：`ln -sf /www/cgi-bin/wrtdeck-api /www$(uci get uhttpd.main.cgi_prefix)/wrtdeck-api` |
+| 点「重新拉取」才有数据，界面写「定时刷新」 | 正常。内嵌时不走 SSE 长连接（一条长连接会在路由器上常驻一个 CGI 进程），改走定时拉取 |
+| 想从局域网直连面板 | 把 `config.json` 的 `listen` 改成 `0.0.0.0:8080`。但要清楚这会让面板绕开 LuCI 的加密方式与登录状态 |
+
 ### 与 LuCI 共存
 
-LuCI 自身的 `/cgi-bin/luci` 路径不在本服务的响应头作用域内，无需特殊处理。薄壳的一跳交接由服务端在**回环地址**上签发一次性交接码（60 秒内有效、用后即焚），浏览器凭该码换会话凭据，**全程不回传 API Token**。
+LuCI 自身的 `/cgi-bin/luci` 路径不在本服务的响应头作用域内，无需特殊处理。
+
+面板页面的 CSP `frame-ancestors` 需要放行 LuCI 所在的页面来源，网关转发时会把浏览器的 `Origin` 与 `Host` 原样带给面板，因此由面板自己判断，不需要在设备上额外配置。
+
+面板导出的页面与二进制**同版本**（页面编在二进制里），所以升级面板包时页面会自动跟着更新，两个包也可以独立升级。
+
+### 与 LuCI 使用同一套加密
+
+面板不另开端口、也不另起证书，它的加密方式完全跟随浏览器访问 LuCI 的那一段：公网配好 HTTPS 就是 HTTPS，局域网里是明文就是明文。
+
+想给整个 LuCI（连带面板）加上 HTTPS，请配置 uhttpd 自己的证书：
+
+```sh
+uci set uhttpd.main.redirect_https=1
+uci add_list uhttpd.main.listen_https=0.0.0.0:443
+uci set uhttpd.main.cert=/etc/uhttpd.crt
+uci set uhttpd.main.key=/etc/uhttpd.key
+uci commit uhttpd && /etc/init.d/uhttpd restart
+```
+
+或把整个 LuCI 放在一个 HTTPS 反向代理之后。无论哪种，面板都跟着走，不需要单独配置。若当前是**公网域名 + 明文 HTTP**，LuCI 里的入口页会明确提示凭据会明文过网。
 
 ## 7. 接入第一台设备
 
@@ -351,7 +423,7 @@ opkg remove wrtdeck          # ipk 卸载
 /etc/init.d/owdash stop
 apk del owdash luci-app-wrtdeck            # 或 opkg remove owdash luci-app-wrtdeck
 mv /etc/owdash /etc/wrtdeck                # 想保留口令、Token 与注册项时必须做这一步
-apk add --allow-untrusted ./wrtdeck-1.0.0-r1.apk ./luci-app-wrtdeck-1.0.0-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk ./luci-app-wrtdeck-1.0.0-rc2-r1.apk
 ```
 
 - 不迁移 `/etc/owdash` 也能启动，但会当成全新安装：初始口令回到 `admin`，API Token 重新生成。
@@ -397,22 +469,27 @@ dist/luci-app-wrtdeck_<版本>-<发布号>_all.ipk      薄壳，架构无关
 ```sh
 make check-apk     # apk 结构：gzip 成员切分、段边界、签名、逐文件校验和
 make check-ipk     # ipk 结构：归档格式、control 字段、权限、属主、ELF 属性、init 契约
-make check-luci    # 薄壳结构，并断言交接契约里不含 token 字段
+make check-luci       # 薄壳（apk）：结构 + 源码级交接契约
+make check-ipk-luci   # 薄壳（ipk）：同一批断言，两种格式一份代码
 make test-apk      # apk：结构校验 + 安装模拟
 make test-ipk      # ipk：结构校验 + 安装模拟
-make test-pkg      # 上面四项一次跑全（推荐提交前执行）
+make test-pkg      # 上面几项一次跑全（推荐提交前执行）
 ```
+
+薄壳的源码级断言放在 `scripts/check_luci_src.sh`，apk 与 ipk 两个校验脚本共用同一份——两边的文件树是一样的，分开写只会慢慢漂移。它卡住的是「装得上」之外的「装上去能用」：菜单路径与视图文件是否同名、rpcd 的字段与 ACL 是否对得上、视图里有没有出现 `location.host` / 固定端口 / 硬编码协议前缀（这三样一旦出现，页面被反向代理到公网域名就必然连不通）、交接消息名与接口路径在前端与薄壳两侧是否一致、`panel.js` 里有没有混进长期凭据。
 
 `simulate-openwrt.sh` 会解包到临时目录，把 procd 的 `procd_*` 函数替换成记录参数的桩，执行 init 脚本的 `start_service()`，然后用它下发的命令真实把服务跑起来，验证：
 
 1. 服务能监听就绪，`/api/v1/health` 与面板页面正常返回；
-2. 首启生成 `secrets.json`，其中含口令散列、盐与「待改口令」标记，且**文件里没有明文口令**；
-3. 未带凭据访问 API 返回 401；
-4. 默认口令 `admin` 登录成功、强制改密生效、改密后旧会话失效；
-5. 连续错误口令触发登录节流，返回 429 并进入锁定；
-6. 一次性交接码能换到会话凭据；
-7. 空注册表启动时不写 `registry.json`，写入注册项后才落盘；运行状态不落盘；
-8. 启动日志为生产形态，不带开发模式提示。
+2. init 把面板页面导出到 `/www/wrtdeck`，页面与它引用的资源都在，且引用是相对路径；
+3. 首启生成 `secrets.json`，其中含口令散列、盐与「待改口令」标记，且**文件里没有明文口令**；
+4. 未带凭据访问 API 返回 401；
+5. 默认口令 `admin` 登录成功、强制改密生效、改密后旧会话失效；
+6. 连续错误口令触发登录节流，返回 429 并进入锁定；
+7. 一次性交接码能换到会话凭据；
+8. 空注册表启动时不写 `registry.json`，写入注册项后才落盘；运行状态不落盘；
+9. 启动日志为生产形态，不带开发模式提示；
+10. **同源网关**：按 uhttpd 的约定调起 `/www/cgi-bin/wrtdeck-api`，验证公开接口照常转发、没有可证实的 LuCI 会话时**不补凭据**（401）、浏览器自带凭据原样转发、非面板 API 的路径一律拒绝（400）、登录码绝不代传（403）。
 
 两处必要的模拟已在该脚本头部注明：开发机上没有 procd，且交叉编译出的 Linux ELF 无法在开发机执行（跑的是同源码的本机产物，包内 ELF 的静态链接与目标架构由 `check-ipk.sh` 单独断言）。
 
@@ -425,7 +502,10 @@ make test-pkg      # 上面四项一次跑全（推荐提交前执行）
 | `apk add` 报签名不受信 | 属预期，加 `--allow-untrusted`；要免掉得用自己的密钥重签 |
 | `opkg install` 报架构不匹配 | `opkg print-architecture` 与包名里的架构对比，按第 1 节的表重新打包 |
 | 装了但进程起不来 | `logread -e wrtdeck`；常见原因是 `auth.token_env` 声明了但变量为空（会明确报错） |
-| 浏览器打不开 | `netstat -lntp \| grep 8080` 确认监听；确认访问来自 LAN 区，必要时检查 `/etc/config/firewall` |
+| 局域网直连 `<设备IP>:8080` 打不开 | 默认只监听回环，属预期。走 LuCI 的「服务 → WrtDeck」，或按第 3 节把 `listen` 改成 `0.0.0.0:8080` |
+| LuCI 里是一个空白框 | 面板页面没导出：`/etc/init.d/wrtdeck restart`，或手动 `/etc/init.d/wrtdeck export_web`；确认 `/www` 可写 |
+| LuCI 里能打开但要求输口令 | 网关没就绪或 LuCI 会话没被认出来，见第 6 节「LuCI 内嵌与同源网关」的排障表 |
+| 界面写「定时刷新」而不是「实时推送」 | 内嵌时的正常表现：不走 SSE 长连接，改走定时拉取 |
 | 登录页提示「口令需先修改」，但改不动 | 默认口令尚未修改时**只有私网来源能登录**；确认浏览器与面板在同一网段或走回环 |
 | 登录一直提示失败 | 可能已触发节流锁定，看 `logread -e wrtdeck \| grep '\[auth\]'`；锁定按指数退避，最长 1 小时 |
 | 忘了登录口令 | 在设备上执行 `/etc/init.d/wrtdeck password` 重置 |

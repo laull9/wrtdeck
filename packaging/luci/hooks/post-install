@@ -1,8 +1,15 @@
 #!/bin/sh
-# luci-app-wrtdeck 安装后要做的两件事：
+# luci-app-wrtdeck 安装后要做的三件事：
 #   1. 重启 rpcd：ACL 与 /usr/libexec/rpcd/wrtdeck 都是 rpcd 启动时读的，
 #      不重启就会出现「菜单点得进去、一调 ubus 就报权限不足」；
-#   2. 清掉 LuCI 的菜单缓存：否则新菜单要等缓存过期才出现。
+#   2. 把同源接口网关补到设备实际使用的 CGI 前缀下：包内固定放在 /www/cgi-bin，
+#      而 cgi_prefix 是可配置的，被改过的设备上补一个符号链接即可；
+#   3. 清掉 LuCI 的菜单缓存，否则新菜单要等缓存过期才出现。
+#
+# 关于面板页面：它是面板本体在启动时导出到 Web 根目录的（wrtdeck -export-web），
+# 因此这里不去动面板的启停状态——正常升级路径下面板包自己会重启一次。
+# 只有在「页面确实不见了、而面板又是开着的」这一种情况下才补一次重启，
+# 免得用户面对一个空白框。
 #
 # apk 与 ipk 共用这一份脚本，安装脚本名由各自的包格式决定。
 [ -n "${IPKG_INSTROOT}" ] && exit 0
@@ -10,5 +17,25 @@
 /etc/init.d/rpcd restart 2>/dev/null
 rm -f /tmp/luci-indexcache 2>/dev/null
 rm -rf /tmp/luci-modulecache 2>/dev/null
+
+# 按设备实际的 CGI 前缀补一次网关入口
+prefix="$(uci -q get uhttpd.main.cgi_prefix 2>/dev/null)"
+[ -n "$prefix" ] || prefix="/cgi-bin"
+case "$prefix" in
+	/*) ;;
+	*) prefix="/$prefix" ;;
+esac
+prefix="${prefix%/}"
+if [ "$prefix" != "/cgi-bin" ]; then
+	mkdir -p "/www$prefix" 2>/dev/null
+	ln -sf /www/cgi-bin/wrtdeck-api "/www$prefix/wrtdeck-api" 2>/dev/null
+fi
+
+# 页面缺席而面板在跑时补一次重启，让本体把页面重新导出
+if [ ! -f /www/wrtdeck/index.html ] && [ -x /etc/init.d/wrtdeck ]; then
+	if ls /etc/rc.d/S*wrtdeck >/dev/null 2>&1; then
+		/etc/init.d/wrtdeck restart 2>/dev/null
+	fi
+fi
 
 exit 0

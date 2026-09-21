@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ActionCard from '../components/ActionCard.vue'
 import SourceCard from '../components/SourceCard.vue'
+import type { LiveMode } from '../lib/live'
 import type { Entry, SourceItem } from '../types'
 // 品牌标识，由 scripts/make-icons.py 从 assets/WrtDeck.png 生成
 import logo_url from '../assets/logo.png'
@@ -10,13 +11,37 @@ import logo_url from '../assets/logo.png'
 const props = defineProps<{
   sources: SourceItem[]
   actions: Entry[]
-  connected: boolean
+  live: LiveMode
 }>()
 const emit = defineEmits<{
   refresh: [string]
   notify: [string, 'ok' | 'error']
   reload: []
 }>()
+
+// 通道名称：面板既可能直连服务端走推送，也可能被设备自带 Web 服务器转发后走拉取
+const live_label = computed(() => {
+  switch (props.live) {
+    case 'sse':
+      return '实时推送'
+    case 'poll':
+      return '定时刷新'
+    default:
+      return '已断开'
+  }
+})
+
+// 通道说明：把「浏览器到底怎么拿到状态」讲清楚，排障时能少问一轮
+const live_detail = computed(() => {
+  switch (props.live) {
+    case 'sse':
+      return '状态由服务端调度器主动下发，浏览器不直接访问设备'
+    case 'poll':
+      return '面板被 LuCI 内嵌或长连接送不出事件时走的通道，页面切到后台会暂停'
+    default:
+      return '可以点右侧按钮手动重新拉取'
+  }
+})
 
 // 按 group 分组，保持后端给出的顺序
 const groups = computed(() => {
@@ -80,10 +105,10 @@ const enabled_actions = computed(() => props.actions.filter((item) => item.enabl
     <section class="panel flex items-center justify-between gap-4 px-4 py-3 text-sm text-ink-faint">
       <span>
         实时通道
-        <span :class="connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'">
-          {{ connected ? 'SSE 已连接' : 'SSE 断开' }}
+        <span :class="props.live === 'off' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'">
+          {{ live_label }}
         </span>
-        ，状态由服务端调度器推送，浏览器不直接访问设备。
+        ，{{ live_detail }}
       </span>
       <button type="button" class="btn btn-outline btn-sm" @click="emit('reload')">重新拉取</button>
     </section>

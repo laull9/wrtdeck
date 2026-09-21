@@ -1,10 +1,11 @@
 {
-  "listen": "0.0.0.0:8080",
+  "listen": "127.0.0.1:8080",
   "data_dir": "/etc/wrtdeck",
   "auth": {},
   "tls": {
     "enabled": false
   },
+  "gateway": {},
   "exec": {
     "enabled": true
   },

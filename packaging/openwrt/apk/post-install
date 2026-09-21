@@ -6,9 +6,9 @@
 /etc/init.d/wrtdeck start
 
 echo "WrtDeck 已安装并启动。"
-echo "  - 面板地址：http://<设备IP>:8080"
-echo "  - 初始口令：admin（首次登录后必须立即修改，不修改的话只允许内网登录）"
-echo "  - 装了 luci-app-wrtdeck 时，也可以从 LuCI 的「服务 -> WrtDeck」进入"
+echo "  - 面板入口：LuCI 的「服务 -> WrtDeck」（需安装 luci-app-wrtdeck，装面板时会自动带上）"
+echo "  - 面板只监听 127.0.0.1:8080，不对外暴露；对外访问与 LuCI 同一个地址、同一套加密方式"
+echo "  - 初始口令：admin，首次登录后建议立即修改"
 echo "  - 忘记口令：/etc/init.d/wrtdeck password"
 echo "  - 脚本用的 API Token：/etc/init.d/wrtdeck token"
 

@@ -39,6 +39,20 @@ fail=0
 ok() { printf '  [ok]   %s\n' "$1"; pass=$((pass + 1)); }
 ng() { printf '  [FAIL] %s\n' "$1"; fail=$((fail + 1)); }
 
+# 断言：描述 + 命令，命令成功即通过
+assert() {
+  _desc="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then ok "$_desc"; else ng "$_desc"; fi
+}
+
+# 断言：描述 + 实际值 + 期望值
+assert_eq() {
+  if [ "$1" = "$2" ]; then ok "$3"; else ng "$3（实际 '$1'，期望 '$2'）"; fi
+}
+
+step() { printf '\n== %s ==\n' "$1"; }
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT INT TERM
 
@@ -94,6 +108,32 @@ if [ -f "$counts" ]; then
   fail=$((fail + py_fail))
 elif [ "$py_status" -ne 0 ]; then
   ng "结构断言脚本异常退出（退出码 $py_status）"
+fi
+
+# ── 薄壳：解出文件树，做与包格式无关的源码级断言 ────────────────────────────
+# 结构校验只说明这个包装得上，说明不了它装上去能不能用。薄壳与面板前端
+# 分属两个包、两份代码，靠菜单路径、消息名与 Web 根目录约定对接，
+# 因此这一层与 check-ipk.sh 共用同一份断言（scripts/check_luci_src.sh）。
+if [ "$preset" = luci ]; then
+  printf '\n== 源码级断言（scripts/check_luci_src.sh） ==\n'
+  tree="$work/apk"
+  if "$(command -v python3 || echo /usr/bin/python3)" "$root/scripts/apk_unpack.py" \
+      --in "$apk" --out "$tree" --quiet >/dev/null 2>&1; then
+    # 权限从重放出来的整包 tar 流里读，apk 数据段的成员名没有 ipk 那样的 ./ 前缀
+    assert_file() {
+      if [ -f "$tree/rootfs$1" ]; then ok "安装 $1"; else ng "缺少 $1"; fi
+      _mode="$(tar tvf "$work/stream.tar" \
+        | awk -v p="${1#/}" '{ n = $NF; sub(/^\.\//, "", n); if (n == p) { print $1; exit } }')"
+      assert_eq "$_mode" "$2" "$1 权限为 $2"
+    }
+    data_dir="$tree/rootfs"
+    # apk_unpack.py 把名字里的前导点去掉了，控制文件落地为 PKGINFO / post-install
+    meta_file="$tree/control/PKGINFO"
+    . "$root/scripts/check_luci_src.sh"
+    check_luci_src
+  else
+    ng "无法解出包内文件树，跳过源码级断言"
+  fi
 fi
 
 printf '\n== 结果 ==\n  通过 %s 项，失败 %s 项\n' "$pass" "$fail"

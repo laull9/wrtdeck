@@ -8,11 +8,11 @@
       首帧主题引导必须是外部同步脚本：服务端下发的是 script-src 'self' 的 CSP，
       内联脚本会被浏览器拦掉，页面就会先闪一下另一套配色。
     -->
-    <script src="/theme-init.js"></script>
+    <script src="./theme-init.js"></script>
     <!-- 站点图标由 scripts/make-icons.py 从 assets/WrtDeck.png 生成，改图标请改母版后重新生成 -->
     <!-- favicon.ico 已内含 16x16 / 32x32 / 48x48，无需再单独声明小尺寸 PNG -->
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" href="./favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48x48.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- 深浅两套主题都要用，实际生效哪套由 prefers-color-scheme 或 html.dark 决定 -->
     <meta name="color-scheme" content="light dark" />

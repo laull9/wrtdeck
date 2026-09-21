@@ -51,6 +51,8 @@ PRESETS = {
             ('usr/share/rpcd/acl.d/luci-app-wrtdeck.json', '0644'),
             ('usr/libexec/rpcd/wrtdeck', '0755'),
             ('www/luci-static/resources/view/wrtdeck/panel.js', '0644'),
+            # 同源网关入口必须是可执行文件，否则 Web 服务器不会把它当 CGI 调起
+            ('www/cgi-bin/wrtdeck-api', '0755'),
         ],
         'depends': ['luci-base', 'wrtdeck'],
         'scripts': ['post-install'],
@@ -351,7 +353,9 @@ def check_config(report, data_entries, preset):
 def check_naming(report, path, preset, fields):
     report.step('8. 文件名与版本')
     base = os.path.basename(path)
-    pattern = re.compile(r'^%s-(?P<version>[0-9][^-]*)-r(?P<release>[0-9]+)\.apk$' % re.escape(preset['name']))
+    # 版本号里允许出现 -rc1 / -beta2 这类预发布后缀，因此不能简单按第一个 - 切分
+    pattern = re.compile(r'^%s-(?P<version>[0-9][A-Za-z0-9._]*(?:-[A-Za-z][A-Za-z0-9._]*)*)-r(?P<release>[0-9]+)\.apk$'
+                         % re.escape(preset['name']))
     matched = pattern.match(base)
     report.expect(matched is not None, '文件名符合 name-版本-r发布号.apk 约定', base)
     pkgver = (fields.get('pkgver') or [''])[0]

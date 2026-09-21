@@ -21,6 +21,7 @@ import (
 	"wrtdeck/internal/certs"
 	"wrtdeck/internal/config"
 	"wrtdeck/internal/engine"
+	"wrtdeck/internal/gateway"
 	"wrtdeck/internal/registry"
 	"wrtdeck/internal/state"
 	"wrtdeck/internal/transport"
@@ -44,18 +45,31 @@ type options struct {
 	show_version   bool
 	reset_set      bool
 	reset_password string
+	gateway        bool
+	export_web     string
 }
 
-// main 解析参数后启动服务并等待退出信号
+// main 解析参数后启动服务或执行一次性的维护命令
 func main() {
 	opts := parse_flags()
 	if opts.show_version {
 		fmt.Println(version)
 		return
 	}
-	if err := run(opts); err != nil {
+	if err := dispatch(opts); err != nil {
 		log.Fatalf("启动失败: %v", err)
 	}
+}
+
+// dispatch 把短命的一次性命令与常驻服务分开处理
+func dispatch(opts options) error {
+	switch {
+	case opts.gateway:
+		return run_gateway(opts)
+	case opts.export_web != "":
+		return run_export_web(opts.export_web)
+	}
+	return run(opts)
 }
 
 // parse_flags 解析命令行参数
@@ -68,6 +82,10 @@ func parse_flags() options {
 	flag.BoolVar(&opts.seed_demo, "seed-demo", false, "注册表为空时写入自检示例注册项")
 	flag.BoolVar(&opts.print_token, "print-token", false, "打印 API Token 后退出")
 	flag.BoolVar(&opts.show_version, "version", false, "打印版本后退出")
+	// 网关模式由设备 Web 服务器的 CGI 调用：处理完这一条请求就退出
+	flag.BoolVar(&opts.gateway, "gateway", false, "以 CGI 网关身份处理一次请求后退出（供 LuCI 同源内嵌）")
+	// 导出前端资源到 Web 根目录，让设备自带 Web 服务器直接服务面板页面
+	flag.StringVar(&opts.export_web, "export-web", "", "把内嵌前端资源导出到指定目录后退出")
 	// 口令重置是设备上唯一的找回手段：忘记口令时从串口或 SSH 以 root 执行
 	flag.Func("reset-password", "把登录口令重置为给定值后退出；值为 - 时从标准输入读取一行",
 		func(value string) error {
@@ -77,6 +95,95 @@ func parse_flags() options {
 		})
 	flag.Parse()
 	return opts
+}
+
+// run_export_web 把内嵌的前端资源导出到设备上的 Web 根目录。
+//
+// 面板页面因此和 LuCI 处在同一个源上：同一个域名、同一个端口、
+// 也就自动继承了设备 Web 服务器当前的加密方式，不必再让浏览器去猜 IP 与端口。
+func run_export_web(dir string) error {
+	result, err := webui.Export(dir)
+	if err != nil {
+		return err
+	}
+	if result.Changed {
+		log.Printf("已导出前端资源：%s（%d 个文件，指纹 %s）", result.Dir, result.Files, result.Fingerprint)
+		return nil
+	}
+	log.Printf("前端资源已是最新（指纹 %s），跳过导出", result.Fingerprint)
+	return nil
+}
+
+// run_gateway 以 CGI 网关身份处理一次 API 请求。
+//
+// 这个模式不启动任何常驻服务，也不碰注册表与运行时状态：
+// 设备 Web 服务器每收到一次 API 调用就起一个进程，进程只做转发。
+func run_gateway(opts options) error {
+	cfg, err := load_gateway_config(opts)
+	if err != nil {
+		return err
+	}
+	return gateway.Run(gateway.Options{
+		Upstream:   cfg.UpstreamURL(),
+		Token:      gateway_token(cfg),
+		VerifyLuci: cfg.Gateway.VerifyLuci(),
+		Inject:     cfg.Gateway.Inject(),
+		Timeout:    cfg.Gateway.Timeout(),
+		Stdin:      os.Stdin,
+		Stdout:     os.Stdout,
+		Logger:     log.New(os.Stderr, "wrtdeck-gateway ", 0),
+	})
+}
+
+// load_gateway_config 只读地装载网关需要的配置。
+// 刻意不走 config.Load：它会在文件缺失时写出一份样例，
+// 而「一次浏览器请求顺带写出配置文件」不是这里该有的副作用。
+func load_gateway_config(opts options) (*config.Config, error) {
+	if opts.data_dir == "" && opts.listen == "" {
+		data, err := os.ReadFile(opts.config_path)
+		switch {
+		case err == nil:
+			cfg, parse_err := config.Parse(data)
+			if parse_err != nil {
+				return nil, parse_err
+			}
+			return cfg, nil
+		case !os.IsNotExist(err):
+			return nil, err
+		}
+		cfg := config.Default()
+		cfg.DataDir = filepath.Dir(opts.config_path)
+		return cfg, nil
+	}
+
+	cfg, err := config.Load(opts.config_path)
+	if err != nil {
+		return nil, err
+	}
+	if opts.data_dir != "" {
+		cfg.DataDir = opts.data_dir
+	}
+	if opts.listen != "" {
+		cfg.Listen = opts.listen
+	}
+	return cfg, nil
+}
+
+// gateway_token 读取用于注入的 API Token。
+//
+// 密钥文件不存在时直接返回空串，不在这里生成：网关是随请求生灭的短命进程，
+// 顺手生成 Token 会带来一次 200ms 量级的 PBKDF2 计算拖慢每一次页面访问，
+// 而且「设备凭据」也不该由一次浏览器的偶然访问来决定。
+func gateway_token(cfg *config.Config) string {
+	if _, err := os.Stat(cfg.SecretsPath()); err != nil {
+		return ""
+	}
+	secrets, err := config.LoadSecrets(cfg.SecretsPath(), cfg.Auth.TokenEnv)
+	if err != nil {
+		log.Printf("网关读取密钥失败，本次不注入凭据: %v", err)
+		return ""
+	}
+	return secrets.Token()
 }
 
 // run 完成装配、启动与优雅退出

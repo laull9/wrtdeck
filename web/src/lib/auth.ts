@@ -9,6 +9,7 @@
 
 import { reactive } from 'vue'
 import { api, ApiError } from '../api'
+import { embedded } from './embed'
 import { ack_parent, code_from_url, strip_url_credentials, wait_for_handoff } from './handoff'
 import { clear_token, get_token, remembers, set_token } from './token'
 
@@ -21,6 +22,8 @@ export const auth = reactive({
   ready: false,
   token: '',
   mode: '' as AuthMode,
+  // 本轮登录是不是由同源网关代办的（浏览器手里并没有凭据）
+  via_gateway: false,
   // 服务端要求先改口令
   must_change: false,
   // 服务端关闭了鉴权（开发模式），此时无需登录
@@ -49,6 +52,7 @@ export async function login_with_token(value: string): Promise<void> {
   set_token(token, remembers())
   auth.token = token
   auth.mode = 'api'
+  auth.via_gateway = false
   try {
     const me = await api.session_me()
     auth.must_change = me.must_change_password
@@ -89,6 +93,7 @@ export function forget(): void {
   clear_token()
   auth.token = ''
   auth.mode = ''
+  auth.via_gateway = false
   auth.must_change = false
 }
 
@@ -125,7 +130,14 @@ export async function bootstrap(): Promise<void> {
     strip_url_credentials()
   }
 
-  // 被 LuCI 嵌进来时，父窗口会递过来一个一次性登录码
+  // 被 LuCI 内嵌时，同源网关可能已经用 LuCI 的登录状态替浏览器办好了凭据。
+  // 这一步放在父窗口交接之前：成了就不必再等一轮消息，面板一进来就是可用的。
+  if (embedded() && (await probe_gateway())) {
+    auth.ready = true
+    return
+  }
+
+  // 父窗口没有代办成功时，由 LuCI 薄壳递过来一个一次性登录码
   const handed_code = await wait_for_handoff()
   if (handed_code && (await redeem(handed_code))) {
     auth.ready = true
@@ -152,6 +164,25 @@ export async function bootstrap(): Promise<void> {
   auth.ready = true
 }
 
+// 问一次自己的身份，判断同源网关有没有替这次访问办过凭据。
+//
+// 浏览器手里其实什么都没有：凭据是网关在服务端补上的，因此本地存储不会有痕迹，
+// 只能靠「这个请求居然通过了」来确认。没有网关时这里就是一次普通的 401，无副作用。
+async function probe_gateway(): Promise<boolean> {
+  try {
+    const me = await api.session_me()
+    auth.mode = me.mode === 'api' ? 'api' : 'session'
+    auth.via_gateway = true
+    auth.must_change = me.must_change_password
+    // 凭据已经到手，告诉父窗口不必再递登录码了。
+    // 少了这一步，薄壳会按重试间隔把码投满一轮才自己停下。
+    ack_parent()
+    return true
+  } catch {
+    return false
+  }
+}
+
 // 用一次性登录码换会话凭据，失败返回 false（登录码过期是常态，不打扰用户）
 async function redeem(code: string): Promise<boolean> {
   try {
@@ -168,6 +199,7 @@ function apply_session(token: string, mode: AuthMode, must_change: boolean, reme
   set_token(token, remember)
   auth.token = token
   auth.mode = mode
+  auth.via_gateway = false
   auth.must_change = must_change
   ack_parent()
 }

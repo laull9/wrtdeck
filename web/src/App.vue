@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { api, ApiError, open_events } from './api'
+import { api, ApiError } from './api'
 import type { DashboardResponse, SourceState } from './types'
 import { auth, forget, logout, require_password_change } from './lib/auth'
+import { start_live } from './lib/live'
+import type { LiveMode } from './lib/live'
 import DashboardView from './views/DashboardView.vue'
 import LoginView from './views/LoginView.vue'
 import RegistryView from './views/RegistryView.vue'
@@ -14,13 +16,13 @@ import logo_url from './assets/logo.png'
 
 // 当前视图，只有两个页面因此不引入 Vue Router
 const page = ref<'dashboard' | 'registry'>('dashboard')
-// Dashboard 全量数据，SSE 只做增量覆盖
+// Dashboard 全量数据，实时通道只做增量覆盖
 const data = ref<DashboardResponse | null>(null)
 // 首次加载与刷新状态
 const loading = ref(true)
 const error = ref('')
-// SSE 连接状态，用于右上角指示灯
-const connected = ref(false)
+// 实时通道当前走的是推送、轮询还是断开
+const live_mode = ref<LiveMode>('off')
 // 提示条列表
 const toasts = ref<{ id: number; text: string; tone: 'ok' | 'error' }[]>([])
 // 主动打开改口令对话框
@@ -31,18 +33,35 @@ const tabs = [
   { key: 'registry', label: '注册表' },
 ] as const
 
-// 关闭 SSE 的回调，组件卸载时调用
-let close_events: (() => void) | null = null
+// 关闭实时通道的回调，组件卸载时调用
+let close_live: (() => void) | null = null
 // 提示条自增序号
 let toast_seq = 0
 
-// 是否需要渲染业务界面：引导结束、且要么有凭据、要么服务端根本没开鉴权
-const signed_in = computed(() => auth.ready && (auth.token !== '' || auth.open))
+// 是否需要渲染业务界面：引导结束、且要么有凭据、要么服务端根本没开鉴权。
+// 判据是凭据「种类」而不是本地有没有存 token：被 LuCI 内嵌时凭据由同源网关
+// 在服务端补上，浏览器手里始终是空的。
+const signed_in = computed(() => auth.ready && (auth.mode !== '' || auth.open))
 // 强制改口令只在已登录之后生效：改口令本身需要凭据，
-// 未登录时把框弹出来，用户既改不了也点不掉，等于把登录页堵死
-const password_forced = computed(() => auth.must_change && signed_in.value)
+// 未登录时把框弹出来，用户既改不了也点不掉，等于把登录页堵死。
+// 鉴权关掉的开发模式下也没有口令可改，服务端已经如实报 false，这里再兜一道。
+const password_forced = computed(() => auth.must_change && signed_in.value && !auth.open)
 // 是否显示改口令与登出按钮
-const show_session_actions = computed(() => !auth.open && auth.token !== '')
+const show_session_actions = computed(() => !auth.open && auth.mode !== '')
+// 免登录进入时不该出现「退出」：凭据是网关代办的，退出按钮清掉的只是本地状态，
+// 刷新一次又会回来，点了只会让人以为出了故障
+const can_sign_out = computed(() => show_session_actions.value && !auth.via_gateway)
+// 顶部通道指示灯：文案与颜色都由当前通道决定
+const live_hint = computed(() => {
+  switch (live_mode.value) {
+    case 'sse':
+      return { text: '实时推送', dot: 'bg-emerald-500 dark:bg-emerald-400' }
+    case 'poll':
+      return { text: '定时刷新', dot: 'bg-sky-500 dark:bg-sky-400' }
+    default:
+      return { text: '连接断开', dot: 'bg-rose-500' }
+  }
+})
 
 // 拉取 Dashboard 全量数据
 async function load(): Promise<void> {
@@ -93,12 +112,20 @@ function apply_source(next: SourceState): void {
   void load()
 }
 
-// 建立 SSE 连接并注册事件处理
+// 建立实时通道。
+// 优先 SSE；被设备自带 Web 服务器转发时它可能送不出事件，
+// live 模块会自动换成定时拉取，这里只需要给出「该拉一次了」的动作。
 function connect(): void {
-  close_events?.()
-  close_events = open_events({
+  close_live?.()
+  close_live = start_live({
+    poll: load,
+    on_mode: (mode) => {
+      live_mode.value = mode
+    },
     on_state: (state) => {
-      connected.value = state
+      if (!state) {
+        live_mode.value = 'off'
+      }
     },
     on_source: apply_source,
     on_action: (payload) => {
@@ -133,10 +160,10 @@ function on_password_changed(): void {
 // 主动登出
 async function sign_out(): Promise<void> {
   await logout()
-  close_events?.()
-  close_events = null
+  close_live?.()
+  close_live = null
   data.value = null
-  connected.value = false
+  live_mode.value = 'off'
   page.value = 'dashboard'
 }
 
@@ -176,7 +203,7 @@ watch(signed_in, (now, before) => {
 })
 
 onBeforeUnmount(() => {
-  close_events?.()
+  close_live?.()
 })
 </script>
 
@@ -222,14 +249,20 @@ onBeforeUnmount(() => {
 
         <div class="ml-auto flex items-center gap-3 text-sm">
           <span class="flex items-center gap-1.5 text-ink-muted">
-            <span
-              class="h-1.5 w-1.5 rounded-full"
-              :class="connected ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-rose-500'"
-            ></span>
-            {{ connected ? '实时已连接' : '实时断开' }}
+            <span class="h-1.5 w-1.5 rounded-full" :class="live_hint.dot"></span>
+            {{ live_hint.text }}
           </span>
           <span class="readout hidden text-ink-faint sm:inline">
             {{ data?.server.sources ?? 0 }} 源 / {{ data?.server.actions ?? 0 }} 动作
+          </span>
+          <!-- 被 LuCI 内嵌时凭据由同源网关代办，这里说明一句，
+               否则用户会奇怪为什么没有登录这一步 -->
+          <span
+            v-if="auth.via_gateway"
+            class="rounded-md border border-line px-2 py-0.5 text-xs text-ink-faint"
+            title="已由 LuCI 的登录状态接管，浏览器里没有存放面板凭据"
+          >
+            LuCI 免登录
           </span>
           <button
             v-if="show_session_actions"
@@ -243,7 +276,7 @@ onBeforeUnmount(() => {
           >
             {{ auth.must_change ? '改初始口令' : '改口令' }}
           </button>
-          <button v-if="show_session_actions" type="button" class="btn btn-ghost btn-sm" @click="sign_out">
+          <button v-if="can_sign_out" type="button" class="btn btn-ghost btn-sm" @click="sign_out">
             退出
           </button>
           <ThemeToggle />
@@ -272,7 +305,7 @@ onBeforeUnmount(() => {
         v-else-if="page === 'dashboard' && data"
         :sources="data.sources"
         :actions="data.actions"
-        :connected="connected"
+        :live="live_mode"
         @refresh="refresh_source"
         @notify="notify"
         @reload="load"

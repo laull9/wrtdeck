@@ -1,5 +1,5 @@
 #!/bin/sh
-# WrtDeck 的 rpcd 后端：给 LuCI 薄壳提供状态查询、一次性登录码与服务启停。
+# WrtDeck 的 rpcd 后端：给 LuCI 里的面板入口提供状态查询、一次性登录码与服务启停。
 #
 # 它由 rpcd 以 root 身份调用，因此能读到 /etc/wrtdeck/secrets.json 这一层凭据；
 # 谁有权调用由 /usr/share/rpcd/acl.d/luci-app-wrtdeck.json 限定（默认只有 root 登录能拿到）。
@@ -7,26 +7,58 @@
 # 交接设计：浏览器的地址栏与历史里不放任何长期凭据。
 # rpcd 在设备内部用 API Token 换一个 60 秒有效、只能兑一次的登录码，
 # 由面板前端收到父窗口消息后兑换成会话凭据。
-# 拿不到登录码时不做任何降级：面板会退回口令登录页，这比把长期凭据交给浏览器安全。
+# 拿不到登录码时不在这里做任何降级：面板会改用同源网关切进来的 LuCI 登录状态，
+# 两条路都不成时才退回口令登录页——这比把长期凭据交给浏览器安全。
 
 . /usr/share/libubox/jshn.sh
 
 PROG=/usr/bin/wrtdeck
 CONF_DIR=/etc/wrtdeck
 CONF="$CONF_DIR/config.json"
-# 只在设备的环回地址上申请登录码，避免依赖网卡地址推导
+# 面板页面被导出到 Web 根目录的这个子目录，Web 服务器直接把它服务给浏览器
+WEB_DIR=/www/wrtdeck
+# 同源接口网关的文件名，与 /www/<cgi_prefix>/<这个名字> 对应
+GATEWAY_NAME=wrtdeck-api
+# 只在设备的环回地址上申请登录码，避免依赖网卡地址推导。
+# 面板本体默认也只监听回环：对外暴露改由设备自带的 Web 服务器承担。
 API_BASE="http://127.0.0.1"
-
-# 取出面板监听端口，配置缺失或解析失败时按默认 8080
-panel_port() {
-	_port="$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"[^"]*:\([0-9][0-9]*\)".*/\1/p' "$CONF" 2>/dev/null | head -1)"
-	[ -n "$_port" ] || _port=8080
-	printf '%s' "$_port"
-}
+DEFAULT_LISTEN="127.0.0.1:8080"
 
 # 从 JSON 里取一个字符串字段，够用即可，不强依赖 jsonfilter
 json_pick() {
 	printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+}
+
+# 面板监听地址，配置缺失或解析失败时按默认回环地址
+panel_listen() {
+	_listen="$(json_pick "$(cat "$CONF" 2>/dev/null)" listen | head -1)"
+	[ -n "$_listen" ] || _listen="$DEFAULT_LISTEN"
+	printf '%s' "$_listen"
+}
+
+# 从监听地址里取出端口，取不到时按默认 8080
+panel_port() {
+	_port="${1##*:}"
+	case "$_port" in
+		''|*[!0-9]*) _port=8080 ;;
+	esac
+	printf '%s' "$_port"
+}
+
+# 读取 Web 服务器的 CGI 前缀。
+# 面板页面与接口都挂在它下面，而 LuCI 自己也挂在它下面，
+# 因此这个值为空基本意味着设备上根本没有可用的 CGI。
+cgi_prefix() {
+	_prefix=""
+	if command -v uci >/dev/null 2>&1; then
+		_prefix="$(uci -q get uhttpd.main.cgi_prefix 2>/dev/null)"
+	fi
+	[ -n "$_prefix" ] || _prefix="/cgi-bin"
+	case "$_prefix" in
+		/*) ;;
+		*) _prefix="/$_prefix" ;;
+	esac
+	printf '%s' "${_prefix%/}"
 }
 
 # 服务是否在运行
@@ -85,9 +117,11 @@ apply_code() {
 	return 1
 }
 
-# status：面板是否在跑、监听端口、版本，以及是否还没改初始口令
+# status：面板是否在跑、页面与网关是否就绪、监听地址与版本，以及是否还没改初始口令
 do_status() {
-	_port="$(panel_port)"
+	_listen="$(panel_listen)"
+	_port="$(panel_port "$_listen")"
+	_prefix="$(cgi_prefix)"
 	_running=false
 	service_running && _running=true
 
@@ -101,8 +135,14 @@ do_status() {
 	json_init
 	json_add_boolean "running" "$_running"
 	json_add_boolean "installed" "$([ -x "$PROG" ] && echo 1 || echo 0)"
+	json_add_string "listen" "$_listen"
 	json_add_string "port" "$_port"
 	json_add_string "version" "$(service_version)"
+	json_add_string "cgi_prefix" "$_prefix"
+	# 面板页面由本体在启动时导出到 Web 根目录，没导出时浏览器只会拿到一个空洞的 404
+	json_add_boolean "web_ready" "$([ -f "$WEB_DIR/index.html" ] && echo 1 || echo 0)"
+	# 同源网关是面板免登录与被嵌入的前提，缺了它就只能自己再输一次面板口令
+	json_add_boolean "gateway_ready" "$([ -x "/www$_prefix/$GATEWAY_NAME" ] && echo 1 || echo 0)"
 	json_add_boolean "token_ready" "$([ -f "$CONF_DIR/secrets.json" ] && echo 1 || echo 0)"
 	json_add_boolean "password_pending" "$_pending"
 	json_dump
@@ -110,7 +150,7 @@ do_status() {
 
 # handoff：给出进入面板所需的凭据。只发一次性登录码，长期凭据不出设备进程。
 do_handoff() {
-	_port="$(panel_port)"
+	_port="$(panel_port "$(panel_listen)")"
 	_code=""
 
 	# 面板可能在开机自启前就被点开，这里不因为没进程就放弃取码

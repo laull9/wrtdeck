@@ -90,6 +90,7 @@ ok "已替换为本机二进制用于运行时验证（不影响包内 ELF 属�
 # 改到空闲端口，避免与开发环境的 8080 冲突；
 # data_dir 在设备上是 /etc/wrtdeck，模拟时一并重定向到临时目录。
 sed -i.bak -e "s/\"0.0.0.0:8080\"/\"127.0.0.1:${port}\"/" \
+           -e "s/\"127.0.0.1:8080\"/\"127.0.0.1:${port}\"/" \
            -e "s#\"data_dir\": \"/etc/wrtdeck\"#\"data_dir\": \"${rootfs}/etc/wrtdeck\"#" \
     "$rootfs/etc/wrtdeck/config.json"
 rm -f "$rootfs/etc/wrtdeck/config.json.bak"
@@ -103,7 +104,7 @@ init="$rootfs/etc/init.d/wrtdeck"
 # 路径与包内容是否一致已由 check-ipk.sh 断言。
 sed -i.bak "s#^PROG=/usr/bin/wrtdeck#PROG=$rootfs/usr/bin/wrtdeck#" "$init"
 sed -i.bak "s#^CONF_DIR=/etc/wrtdeck#CONF_DIR=$rootfs/etc/wrtdeck#" "$init"
-sed -i.bak "s#^CONF=\"\$CONF_DIR/config.json\"#CONF=\"\$CONF_DIR/config.json\"#" "$init"
+sed -i.bak "s#^WEB_DIR=/www/wrtdeck#WEB_DIR=$rootfs/www/wrtdeck#" "$init"
 rm -f "$init.bak"
 
 # 记录 procd 收到的参数，稍后用这些参数真实启动进程
@@ -134,6 +135,20 @@ fi
 ok "procd command = $captured_cmd"
 ok "procd respawn = $captured_respawn"
 ok "procd limits  = $captured_limits"
+
+# init 启动时要顺手把面板页面导出到 Web 根目录：设备自带的 Web 服务器
+# 正是从这里把页面发给浏览器的，缺了它 LuCI 里的入口就只是一个空白框。
+if [ -f "$rootfs/www/wrtdeck/index.html" ]; then
+  ok "面板页面已导出到 Web 根目录（$(find "$rootfs/www/wrtdeck" -type f | wc -l | tr -d ' ') 个文件）"
+else
+  die "init 没有把面板页面导出到 Web 根目录"
+fi
+# 页面里的资源引用必须是相对路径：面板既可能挂在 /，也可能挂在 /wrtdeck/ 下
+if grep -q '"\./assets/' "$rootfs/www/wrtdeck/index.html"; then
+  ok "面板页面的资源引用是相对路径（可挂在任意子目录下）"
+else
+  die "面板页面的资源引用不是相对路径，挂在子目录下会加载不到"
+fi
 
 # ── 3. 用 init 下发的命令真实启动服务 ──────────────────────────────────────
 step "3. 启动服务并验证可用性"
@@ -356,9 +371,105 @@ if grep -q '127.0.0.1:5173' "$stage/server.log"; then
 fi
 ok "启动日志为生产形态（无开发模式提示）"
 
+# ── 9. 同源网关（LuCI 内嵌走的那条路）──────────────────────────────────────
+# 薄壳把面板页面与接口都放在设备自带 Web 服务器的同一个源上：
+# 页面是 /www 下的静态文件，接口是这个 CGI。这里按 uhttpd 的约定调起它，
+# 验证「浏览器全程只跟一个主机名打交道」这条路径是真的通的。
+step "9. 同源网关（LuCI 内嵌路径）"
+
+# CGI 入口来自薄壳包，与面板本体是两个包；这里按薄壳的安装位置摆好
+cgi_dir="$rootfs/www/cgi-bin"
+mkdir -p "$cgi_dir"
+cp "$root/packaging/luci/root/www/cgi-bin/wrtdeck-api" "$cgi_dir/wrtdeck-api"
+chmod 0755 "$cgi_dir/wrtdeck-api"
+# 入口里的路径是设备上的绝对路径，模拟时重定向到临时目录
+sed -i.bak "s#^PROG=/usr/bin/wrtdeck#PROG=$rootfs/usr/bin/wrtdeck#" "$cgi_dir/wrtdeck-api"
+sed -i.bak "s#^CONF=/etc/wrtdeck/config.json#CONF=$rootfs/etc/wrtdeck/config.json#" "$cgi_dir/wrtdeck-api"
+rm -f "$cgi_dir/wrtdeck-api.bak"
+ok "CGI 入口已就位（$cgi_dir/wrtdeck-api）"
+
+# call_gateway 按 uhttpd 给 CGI 的环境调起网关，参数是 PATH_INFO
+call_gateway() {
+  env \
+    REQUEST_METHOD="${gw_method:-GET}" \
+    PATH_INFO="$1" \
+    QUERY_STRING="${gw_query:-}" \
+    HTTP_HOST="luci.example.com" \
+    HTTP_COOKIE="${gw_cookie:-}" \
+    HTTP_AUTHORIZATION="${gw_auth:-}" \
+    REMOTE_ADDR="${gw_remote:-192.168.1.9}" \
+    "$cgi_dir/wrtdeck-api"
+}
+
+# cgi_status 从 CGI 输出取状态码：没有 Status 行即为 200，这是 CGI 的约定
+cgi_status() {
+  _line="$(printf '%s' "$1" | sed -n '1p')"
+  case "$_line" in
+    Status:*) printf '%s' "$(printf '%s' "$_line" | sed -n 's/^Status: \([0-9][0-9]*\).*/\1/p')" ;;
+    *) printf '200' ;;
+  esac
+}
+
+# 公开接口：网关照常转发，不因为调用方没登录 LuCI 就拒掉面板自己的健康检查
+out="$(call_gateway /api/v1/health)"
+[ "$(cgi_status "$out")" = "200" ] || die "网关转发健康检查期望 200，实际 $(cgi_status "$out")"
+case "$out" in
+  *'"version"'*) ok "网关转发公开接口并原样带回响应体" ;;
+  *) die "网关返回的响应体不像面板响应：$(printf '%s' "$out" | sed -n '1,3p')" ;;
+esac
+
+# 需要鉴权的接口：没有 LuCI 会话就不补凭据，面板按未登录回 401。
+# 这是最关键的一条断言——少了它，网关等于一个不用口令的后门。
+gw_cookie=""
+out="$(call_gateway /api/v1/dashboard)"
+[ "$(cgi_status "$out")" = "401" ] || die "无 LuCI 会话时期望 401，实际 $(cgi_status "$out")"
+ok "没有 LuCI 会话时不补凭据，面板按未登录拒绝（401）"
+
+# 带一个伪造的 LuCI 会话同样不补：本机没有 ubus，校验只能失败，
+# 而失败时必须按「未登录」处理，不能放行
+gw_cookie="sysauth_http=forged-session-id"
+out="$(call_gateway /api/v1/dashboard)"
+[ "$(cgi_status "$out")" = "401" ] || die "伪造 LuCI 会话时期望 401，实际 $(cgi_status "$out")"
+ok "无法证实的 LuCI 会话不会换来面板凭据（校验失败即不注入）"
+
+# 浏览器自己带着凭据时原样转发：面板前端兑换到会话凭据后走的就是这条路
+gw_cookie=""
+gw_auth="Bearer $init_token"
+out="$(call_gateway /api/v1/dashboard)"
+[ "$(cgi_status "$out")" = "200" ] || die "带凭据转发期望 200，实际 $(cgi_status "$out")"
+ok "浏览器自带的凭据原样转发给面板（200）"
+gw_auth=""
+
+# 网关只转发面板 API：能当通用代理用就等于给设备开了个无鉴权跳板
+out="$(call_gateway /etc/passwd)"
+[ "$(cgi_status "$out")" = "400" ] || die "非 API 路径期望 400，实际 $(cgi_status "$out")"
+ok "非面板 API 的路径一概拒绝（400），网关不是通用代理"
+
+# 登录码只许设备本机申请。网关进程恰好跑在本机，放它过去就等于
+# 让任何够得着设备 Web 端口的人凭空换一张会话凭据
+out="$(call_gateway /api/v1/session/handoff)"
+[ "$(cgi_status "$out")" = "403" ] || die "网关代传登录码期望 403，实际 $(cgi_status "$out")"
+ok "网关不代传登录码（403），这条路只能由设备本机走"
+
+# 面板页面必须是自包含的相对引用：它既可能挂在 /wrtdeck/ 下，
+# 也可能被薄壳按别的子目录布置，绝对路径会让其中一种直接白屏
+page="$rootfs/www/wrtdeck/index.html"
+grep -q '"\./assets/' "$page" || die "面板页面没有用相对路径引用资源"
+for asset in $(sed -n 's/.*"\.\/\(assets\/[^"]*\)".*/\1/p' "$page" | sort -u); do
+  [ -f "$rootfs/www/wrtdeck/$asset" ] || die "页面引用的 $asset 不在导出目录里"
+done
+ok "面板页面与它引用的资源都在导出目录里（$(find "$rootfs/www/wrtdeck" -type f | wc -l | tr -d ' ') 个文件）"
+
+# 导出到 Web 根目录的页面不经过面板进程，因此它必须自带「API 在哪」的答案：
+# 这个答案是薄壳用查询参数告诉它的，页面对此不做任何设备地址推断
+grep -q 'embed' "$root/packaging/luci/root/www/luci-static/resources/view/wrtdeck/panel.js" ||
+  die "薄壳没有把嵌入与 API 前缀告诉面板，面板会去猜设备地址"
+ok "薄壳把 API 前缀与嵌入标志传给面板，面板不推断设备地址"
+
 printf '\n== 结果 ==\n'
 printf '  安装模拟全部通过（%s 包）：\n' "$format"
 printf '  init 脚本可拉起服务；首启口令可用且强制更换；改口令后旧会话立即失效；\n'
-printf '  登录失败会被限速；一次性登录码只能用一次且限同源；数据落在 data_dir\n'
+printf '  登录失败会被限速；一次性登录码只能用一次且限同源；数据落在 data_dir；\n'
+printf '  同源网关只转发面板 API 且不凭白给凭据，面板页面自带相对路径资源\n'
 printf '\n  注意：本脚本与真实设备的差异只有两处——procd 被桩化、二进制换成本机版本，\n'
 printf '  其余（HTTP 接口、凭据校验、落盘位置）都是真实执行的结果。\n'

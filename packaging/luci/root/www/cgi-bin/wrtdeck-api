@@ -1,0 +1,28 @@
+#!/bin/sh
+# WrtDeck 的同源 API 网关入口。
+#
+# 它被设备自带 Web 服务器的 CGI 前缀直接调起（见 uhttpd 的 cgi_prefix）。
+# 设备上的 Web 服务器只能服务静态文件与 CGI，不能反向代理，于是面板 API
+# 由这个 CGI 转交给只监听回环的面板本体。转发、来源判断与凭据处理全在
+# 二进制里（-gateway），这里只负责把它拉起来，并在它缺席时说人话。
+#
+# 之所以由 CGI 而不是由 Web 服务器直接服务：面板因此和 LuCI 处在同一个源上，
+# 同一个域名、同一个端口、同一套加密方式，浏览器不必再去猜设备的 IP 与端口——
+# 页面被反向代理到公网域名之后，任何这类猜测都会指向一个连不通的地址。
+
+PROG=/usr/bin/wrtdeck
+CONF=/etc/wrtdeck/config.json
+
+# 面板本体没装时按 CGI 约定先吐状态行与响应头，再给一句能看懂的话。
+# 直接退出不输出任何内容的话，浏览器只会看到一个空洞的 502。
+if [ ! -x "$PROG" ]; then
+	printf 'Status: 503 Service Unavailable\r\n'
+	printf 'Content-Type: application/json; charset=utf-8\r\n'
+	printf 'Cache-Control: no-store\r\n'
+	printf 'Connection: close\r\n'
+	printf '\r\n'
+	printf '{"error":{"code":"panel_missing","message":"面板本体（wrtdeck）尚未安装，请先安装该软件包"}}\n'
+	exit 0
+fi
+
+exec "$PROG" -config "$CONF" -gateway

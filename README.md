@@ -31,7 +31,8 @@ WrtDeck 是一个运行在 OpenWrt 上的轻量级设备控制面板，用统一
 | 口令 + Token 双凭据认证（PBKDF2 口令、12h 会话、强制首改） | 可用 |
 | 登录防爆破（每来源节流 + 指数退避锁定 + 全局限流） | 可用 |
 | 公网暴露加固（严格 CSP、安全响应头、可选 TLS、明文 308 重定向） | 可用 |
-| LuCI 薄壳一跳登录（一次性交接码，不回传 Token） | 可用 |
+| LuCI 内嵌入口（面板原样嵌进 LuCI 页面，同源、免登录、随 LuCI 走 HTTPS） | 可用 |
+| 同源接口网关（uhttpd 的 CGI 转交给只监听回环的面板本体） | 可用，附单元测试与安装模拟 |
 | 运行历史（内存环形缓冲，不写闪存） | 可用 |
 | Vue 3 + Tailwind 4 + Reka UI 前端 | 可用 |
 | 深浅双主题（跟随系统 + 右上角手动切换） | 可用 |
@@ -109,8 +110,27 @@ make clean          # 清理构建产物
 | HSTS | 仅在启用 TLS 时下发 |
 | 可选 TLS | 自带证书或自动生成 ECDSA P-256 自签证书（10 年有效，落盘 `data_dir`）；启用后另起明文监听并 308 重定向 |
 | 反节流绕过 | 来源判定**刻意忽略 `X-Forwarded-For`**，避免攻击者伪造头绕过登录锁定 |
+| 代理感知 | 只认 `X-Forwarded-For` / `X-Forwarded-Host` / `X-Real-Ip` 这几个头**出现了没有**，不采信里面的值。经代理进来时来源一律不再当作设备本机，于是「登录码只能本机申请」「初始口令期间只许内网登录」不会被同源网关绕过 |
 
 审计日志只记录来源与结果（`[auth]` 前缀），**绝不写入口令、Token 或交接码**。
+
+## LuCI 内嵌
+
+装了 `luci-app-wrtdeck` 之后，LuCI 的「服务 → WrtDeck」里是**原样内嵌的面板页面**，不是一个跳转链接。做法是面板不再自己另开一个端口对外：
+
+| 部分 | 挂在哪 | 谁在服务 |
+| --- | --- | --- |
+| 面板页面与资源 | `/www/wrtdeck/` | 设备自带的 Web 服务器（uhttpd），当静态文件发 |
+| 面板接口 | `<cgi_prefix>/wrtdeck-api` | 同源下的 CGI，转交给面板本体 |
+| 面板本体 | `127.0.0.1:8080` | 只监听回环，不对局域网另开端口 |
+
+于是浏览器全程只跟一个主机名、一个端口打交道：
+
+- **加密方式自动跟随 LuCI**：页面走 HTTPS 就是 HTTPS，局域网里是明文就是明文。面板不另起一套证书，也不去猜设备的 IP 与端口——页面被反向代理到公网域名之后，任何这类推断都会指向一个连不通的地址。
+- **免登录**：网关先向 rpcd 证实「这个浏览器确实登录过 LuCI」，证实通过才替它补上面板凭据。证实不了就原样转发，面板自己还有一道鉴权，前端也能退回收口令登录页；网关不会因为认不出人就把门打开。
+- **实时通道自动降级**：内嵌时不试 SSE 长连接（一条长连接会在路由器上常驻一个 CGI 进程），直接走定时拉取，页面切到后台即停。
+
+> 面板本体默认监听 `127.0.0.1:8080`，局域网里直接访问 `http://<设备IP>:8080` 是**不通**的——对外入口统一由 LuCI 承担。确实需要的话，把 `config.json` 的 `listen` 改成 `0.0.0.0:8080` 即可，但要清楚这会让面板绕开 LuCI 的加密方式与登录状态。
 
 ## 界面主题
 
@@ -158,33 +178,37 @@ internal/
   template/           最小模板系统
   extract/            响应体取值
   state/              运行时状态缓存、运行历史与事件广播
-  webui/              embed.FS 静态资源
+  gateway/            同源 CGI 网关：转发面板接口、校验 LuCI 会话后补凭据
+  webui/              embed.FS 静态资源，以及导出到 Web 根目录的实现
 web/                  Vue 3 + TypeScript + Vite + Tailwind 4 前端
   public/             站点图标与 theme-init.js（CSP 要求脚本外置）
   src/assets/         界面内 logo（由 make icons 生成）
   src/lib/auth.ts     认证状态：登录、改密、Token 登录、一次性交接
+  src/lib/embed.ts    被 LuCI 内嵌时的运行环境：接口前缀与嵌入标志
+  src/lib/live.ts     实时通道：直连走 SSE，内嵌走轮询，页面隐藏即暂停
   src/lib/token.ts    凭据存储：会话存储优先，勾选「记住」才落 localStorage
   src/lib/handoff.ts  LuCI 一跳交接（URL / postMessage 双通道）
   src/lib/theme.ts    主题状态：本地存储、跟随系统、切换
   src/style.css       语义色 token 与深浅两套取值
 assets/WrtDeck.png    图标母版，站点图标与 logo 的唯一来源
 scripts/              开发、构建与打包测试脚本（兼容 macOS bash 3.2）
+  check_luci_src.sh   薄壳的源码级断言，apk 与 ipk 两个校验脚本共用
 packaging/openwrt/    procd 启动脚本与 apk / ipk 控制文件
-packaging/luci/       luci-app-wrtdeck 薄壳的 rpcd / menu / 前端视图
+packaging/luci/       luci-app-wrtdeck 薄壳：rpcd 后端、菜单、LuCI 视图、CGI 网关入口
 ```
 
 ## 资源占用
 
 | 项目 | 实测 |
 | --- | --- |
-| 本机二进制 | 7.5 MB |
+| 本机二进制 | 8.2 MB |
 | linux/arm64 静态 ELF | 7.9 MB |
 | apk 安装包 | 3.2 MB |
 | ipk 安装包（gzip） | 3.2 MB |
-| luci-app-wrtdeck 薄壳 apk | 8 KB |
-| luci-app-wrtdeck 薄壳 ipk | 9 KB |
-| 前端 JS（gzip） | 72 KB |
-| 前端 CSS（gzip） | 8.0 KB |
+| luci-app-wrtdeck 薄壳 apk | 12 KB |
+| luci-app-wrtdeck 薄壳 ipk | 13 KB |
+| 前端 JS（gzip） | 74 KB |
+| 前端 CSS（gzip） | 8.1 KB |
 | 界面 logo（256px PNG） | 48 KB |
 
 后端零第三方依赖，`go.mod` 只有 `module` 与 `go` 两行。

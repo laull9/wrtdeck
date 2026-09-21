@@ -8,14 +8,20 @@ USE_PROCD=1
 PROG=/usr/bin/wrtdeck
 CONF_DIR=/etc/wrtdeck
 CONF="$CONF_DIR/config.json"
+# 面板页面被导出到这里，由设备自带的 Web 服务器直接服务。
+# 与 luci-app-wrtdeck 里的入口约定一致，两边改动要同步。
+WEB_DIR=/www/wrtdeck
 
-EXTRA_COMMANDS="token password"
-EXTRA_HELP="	token    打印当前 API Token
-	password 重置登录口令（忘记口令时用）"
+EXTRA_COMMANDS="token password export_web"
+EXTRA_HELP="	token       打印当前 API Token
+	password    重置登录口令（忘记口令时用）
+	export_web  把面板页面重新导出到 $WEB_DIR"
 
 start_service() {
 	# 首次启动时 conf 目录可能不存在，配置与 Token 都在这里生成
 	mkdir -p "$CONF_DIR"
+
+	do_export_web
 
 	procd_open_instance
 	procd_set_param command "$PROG" -config "$CONF"
@@ -25,6 +31,19 @@ start_service() {
 	procd_set_param stderr 1
 	procd_set_param limits nofile="1024 1024"
 	procd_close_instance
+}
+
+# do_export_web 把编进二进制的面板页面导出到 Web 根目录。
+#
+# 页面之所以不由这个进程直接提供，是因为设备自带的 Web 服务器才是浏览器
+# 真正连的那个源：把页面放进去，它就和 LuCI 同域名、同端口、同一套加密方式，
+# 于是被反向代理到公网域名时也不需要浏览器去猜设备的 IP 与端口。
+# 导出失败（比如 /www 只读）不阻塞启动：面板在自己的监听地址上照样能用。
+do_export_web() {
+	[ -x "$PROG" ] || return 0
+	"$PROG" -config "$CONF" -export-web "$WEB_DIR" >/dev/null 2>&1 ||
+		logger -t wrtdeck "面板页面导出到 $WEB_DIR 失败，LuCI 里的内嵌入口可能显示不出来"
+	return 0
 }
 
 stop_service() {
@@ -47,4 +66,12 @@ token() {
 # 因此做成 init 的子命令，与设备上其它服务的排障方式保持一致。
 password() {
 	"$PROG" -config "$CONF" -reset-password -
+}
+
+# export_web 手动重新导出面板页面，升级后排障用得上。
+# 名字里不能用短横线：rc.common 会直接把子命令名当函数名调用，
+# 而短横线不是合法的 shell 标识符字符。
+export_web() {
+	do_export_web
+	[ -f "$WEB_DIR/index.html" ] || echo "面板页面未导出，请检查 $WEB_DIR 是否可写"
 }

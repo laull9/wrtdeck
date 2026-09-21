@@ -10,6 +10,7 @@ import type {
   SourceState,
 } from './types'
 import { get_token } from './lib/token'
+import { api_base } from './lib/embed'
 
 // ApiError 携带 HTTP 状态码与后端错误码，便于区分鉴权失败、登录限速与需要改口令
 export class ApiError extends Error {
@@ -33,7 +34,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(`/api/v1${path}`, { ...init, headers })
+  const response = await fetch(`${api_base()}/api/v1${path}`, { ...init, headers })
   if (response.status === 204) {
     return undefined as T
   }
@@ -122,8 +123,11 @@ export interface EventHandlers {
 // 注意：服务端把载荷直接放在 data 字段，不存在 type/at 外层信封
 export function open_events(handlers: EventHandlers): () => void {
   const token = get_token()
+  const base = api_base()
   // EventSource 无法自定义请求头，因此通过查询参数传递 Token
-  const url = token ? `/api/v1/events?token=${encodeURIComponent(token)}` : '/api/v1/events'
+  const url = token
+    ? `${base}/api/v1/events?token=${encodeURIComponent(token)}`
+    : `${base}/api/v1/events`
   const source = new EventSource(url)
 
   source.addEventListener('open', () => handlers.on_state?.(true))

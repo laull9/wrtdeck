@@ -176,13 +176,15 @@ func (s *Server) info() server_info {
 			actions++
 		}
 	}
+	// 鉴权关掉的开发模式下没有「口令」这回事，因此不再报「需要先改口令」：
+	// 否则每次开 dev 都会被一个既改不掉也无所谓的弹窗挡住。
 	return server_info{
 		Version:     s.version,
 		UptimeS:     time.Since(s.started).Seconds(),
 		StartedAt:   s.started,
 		Dev:         s.dev,
 		AuthOff:     s.cfg.Auth.Disabled,
-		MustChange:  s.secrets.MustChange(),
+		MustChange:  s.secrets.MustChange() && !s.cfg.Auth.Disabled,
 		SessionTTLM: int(s.cfg.Auth.SessionTTL().Minutes()),
 		TLS:         s.cfg.TLS.Enabled,
 		Sources:     sources,

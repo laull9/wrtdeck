@@ -166,7 +166,7 @@ func (s *Server) handle_session_login(w http.ResponseWriter, r *http.Request) {
 	remote := client_ip(r)
 	now := time.Now()
 
-	if s.secrets.MustChange() && !is_private_addr(r.RemoteAddr) {
+	if s.secrets.MustChange() && (arrived_via_proxy(r) || !is_private_addr(r.RemoteAddr)) {
 		audit("login.blocked", remote, "初始口令期间拒绝外网登录")
 		write_error(w, http.StatusForbidden, "setup_required",
 			"面板仍在使用初始口令，请先在同一局域网内登录并修改口令")
@@ -305,8 +305,10 @@ func (s *Server) handle_session_password(w http.ResponseWriter, r *http.Request)
 // 地址栏、浏览器历史或 iframe 的 src 里。它要求来源是回环地址且持有有效凭据，
 // 公网上的任何来源都够不着。
 func (s *Server) handle_session_handoff(w http.ResponseWriter, r *http.Request) {
-	if !is_loopback_addr(r.RemoteAddr) {
-		audit("handoff.blocked", client_ip(r), "非回环来源")
+	// 「经过代理」这一条不能省：转发之后的 RemoteAddr 是代理自己的回环地址，
+	// 只看它的话，任何能碰到设备 Web 端口的人都能顺手换一张登录码。
+	if arrived_via_proxy(r) || !is_loopback_addr(r.RemoteAddr) {
+		audit("handoff.blocked", client_ip(r), "非本机直连来源")
 		write_error(w, http.StatusForbidden, "remote_not_allowed", "登录码只能由设备本机申请")
 		return
 	}
@@ -417,6 +419,25 @@ func host_is_local_name(hostport string) bool {
 	// 因此可以信任；公网域名一律不认，DNS 重绑定正是靠公网域名实现的。
 	for _, suffix := range []string{".lan", ".local", ".home", ".home.arpa", ".internal"} {
 		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// proxy_headers 是反向代理会补上的来源标记。
+// 只看它们存在与否，不采信里面的内容：内容可以随手伪造，
+// 但「一个都没出现」这件事，直连的客户端伪造不出来。
+var proxy_headers = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Real-Ip"}
+
+// arrived_via_proxy 判断这次请求是否经由反向代理到达。
+//
+// 用来给「来源是不是设备本机」那几处判断加一道保险：经代理转发之后
+// RemoteAddr 一律显示为代理自己（常常就是回环），单看它会得出错误结论，
+// 于是本该只许本机做的事（申请登录码、用初始口令登录）就变成了对所有人开放。
+func arrived_via_proxy(r *http.Request) bool {
+	for _, name := range proxy_headers {
+		if strings.TrimSpace(r.Header.Get(name)) != "" {
 			return true
 		}
 	}

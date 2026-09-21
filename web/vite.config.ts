@@ -9,6 +9,10 @@ const backend = process.env.WRTDECK_BACKEND ?? 'http://127.0.0.1:8080'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  // 相对基址：面板既要能被面板自身的服务挂在根路径（/），
+  // 也要能被设备自带的 Web 服务器挂在子目录（/wrtdeck/）。
+  // 绝对路径的 /assets/... 在子目录下会指到别的应用上去。
+  base: './',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
