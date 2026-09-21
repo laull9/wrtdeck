@@ -78,6 +78,18 @@ check_luci_src() {
   for method in status handoff control; do
     luci_has "$acl" "\"$method\"" "ACL 放行 $method"
   done
+  # jshn 的 json_add_boolean 只认 0/1：喂它 shell 字符串 "true" 会被静默序列化成
+  # JSON 的 false，不报任何错。真机上的表现是 status.running 恒假——LuCI 里永远
+  # 显示「服务未运行」，而且薄壳会因为 running 为假提前 return，连面板框都不渲染。
+  # 包格式校验、源码断言、本地桩化统统看不见这一类错，只能靠这条纪律卡住。
+  bool_strings="$(grep -n -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=(true|false)[[:space:]]*$' "$rpcd" | tr '\n' ';')"
+  if [ -n "$bool_strings" ]; then
+    ng "rpcd 用字符串 true/false 表示布尔量，jshn 会静默转成 JSON false：$bool_strings"
+  else
+    ok "rpcd 的布尔量用 0/1（jshn 的 json_add_boolean 只认数字）"
+  fi
+  # pgrep 由 procps-ng 提供，最小固件的 busybox 没编入它；拿它当唯一判据会静默判成未运行
+  luci_has "$rpcd" '/etc/init.d/wrtdeck status' "service_running 以 procd 为主判据，不单靠可选的 pgrep"
 
   # ── 4. 同源网关入口 ──────────────────────────────────────────────────────
   step "同源网关入口"
@@ -94,6 +106,16 @@ check_luci_src() {
   luci_has "$menu" 'admin/services/wrtdeck' "菜单挂在 admin/services/wrtdeck"
   luci_has "$menu" 'wrtdeck/panel' "菜单指向视图 wrtdeck/panel"
   luci_has "$menu" 'luci-app-wrtdeck' "菜单依赖本包的 ACL"
+  # depends.acl 必须写成字符串数组。ucode 版的 dispatcher 用 ...spread 展开它
+  # （dispatcher.uc: push(ctx.acls, ...(node?.depends?.acl || []))），
+  # 写成对象会让整条菜单 500：({"luci-app-wrtdeck":["read"]}) is not iterable。
+  # 更毒的是这个错只在真机点进菜单时出现，包格式校验与本地桩化都看不见。
+  # 去掉空白后再比对，免得断言被缩进风格绑死。
+  menu_norm="$(tr -d ' \t\n' < "$menu")"
+  case "$menu_norm" in
+    *'"acl":['*) ok "菜单 depends.acl 用数组形式（ucode dispatcher 要求）" ;;
+    *) ng "菜单 depends.acl 不是数组：ucode 会因 'is not iterable' 让菜单 500" ;;
+  esac
   panel="$data_dir/www/luci-static/resources/view/wrtdeck/panel.js"
   for token in "'require view'" 'rpc.declare' 'postMessage' 'view.extend' 'iframe'; do
     luci_has "$panel" "$token" "视图含 $token"
@@ -120,6 +142,17 @@ check_luci_src() {
   for token in 'index.html' 'cgi_prefix' 'embed=1' 'wrtdeck-api'; do
     luci_has "$panel" "$token" "视图用同源 $token 定位面板与接口"
   done
+  # 面板页面在 Web 根目录下（/www/<panel_dir>），**不**挂在 CGI 前缀下：
+  # 只有 API 网关那一份脚本才走 cgi_prefix。两者混起来会拼出一个必然 404 的
+  # 地址（/cgi-bin/wrtdeck/index.html），现象是 LuCI 里的面板框一片空白。
+  # 只截取 panel_page 函数体，免得把 panel_api 里正当的 normalize_prefix 算进来。
+  panel_page_body="$(sed -n '/function panel_page/,/^}/p' "$panel")"
+  case "$panel_page_body" in
+    *normalize_prefix*)
+      ng "panel_page 掺进了 CGI 前缀：面板在 Web 根目录下，不在 cgi_prefix 下" ;;
+    *)
+      ok "panel_page 不掺 CGI 前缀（面板在 Web 根目录下）" ;;
+  esac
 
   # ── 6. 与面板前端的交接契约 ──────────────────────────────────────────────
   step "与面板前端的交接契约"

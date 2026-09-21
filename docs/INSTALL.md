@@ -33,11 +33,11 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 ```sh
 # OpenWrt 25.12 及以上（apk）
 apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
-apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
-opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk
+opkg install ./wrtdeck_1.0.2-1_aarch64_cortex-a53.ipk
 ```
 
 > **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
@@ -45,7 +45,7 @@ opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk
 > 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
 >
 > ```sh
-> apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
+> apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
 > ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
@@ -65,8 +65,8 @@ opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk
 先确认面板包已装好（`apk list -I | grep wrtdeck`），再装薄壳：
 
 ```sh
-apk add --allow-untrusted ./luci-app-wrtdeck-1.0.1-r1.apk   # apk 设备
-opkg install ./luci-app-wrtdeck_1.0.1-1_all.ipk             # ipk 设备
+apk add --allow-untrusted ./luci-app-wrtdeck-1.0.2-r1.apk   # apk 设备
+opkg install ./luci-app-wrtdeck_1.0.2-1_all.ipk             # ipk 设备
 ```
 
 薄壳只有 rpcd 后端、一个 LuCI 视图、一份菜单与一个 CGI 网关入口，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
@@ -175,7 +175,7 @@ logread -e wrtdeck -f
 | --- | --- |
 | `listen` | 默认 `127.0.0.1:8080`，只监听回环，对外入口由 LuCI 承担。要让局域网直连就改成 `0.0.0.0:8080`，或改成 `127.0.0.1:8080` 后前置 Nginx |
 | `data_dir` | 注册表、密钥、配置与自签证书的落盘目录，改完要同步改 `/etc/init.d/wrtdeck` 里的 `CONF_DIR` |
-| `gateway.*` | 同源 CGI 网关。留空即按默认工作：上游地址由 `listen` 推导，校验 LuCI 会话后注入凭据 |
+| `gateway.*` | 同源 CGI 网关。留空即按默认工作：上游地址由 `listen` 推导。注意「校验 LuCI 会话后注入凭据」这一段在原生 LuCI 上不生效（cookie 被限定在 `/cgi-bin/luci/`），实际让用户免登录的是薄壳递过来的一次性登录码，见第 6 节 |
 | `gateway.upstream` | 面板本体地址，留空时按 `listen` 推出回环地址；面板本体与网关分处两个进程时才需要显式指定 |
 | `gateway.verify_luci_session` | 默认 `true`。设为 `false` 时**不会注入凭据**（不校验却注入等于把凭据送给所有能访问设备 Web 端口的人），面板退化成需要自己登录 |
 | `auth.disabled` | 设为 `true` 关闭鉴权，**仅限本机调试** |
@@ -284,10 +284,12 @@ ls -l /www/cgi-bin/wrtdeck-api      # 网关入口是否就位
 uci get uhttpd.main.cgi_prefix      # 设备实际的 CGI 前缀
 ```
 
-凭据交接有两条路，按顺序尝试，都不成才退回收口令登录页：
+凭据交接名义上有两条路，但**只有第二条在原生 LuCI 上真的会跑**：
 
-1. **同源网关代签**：网关先向 rpcd 问一句「这个浏览器带的 LuCI 会话登录了吗」，证实通过才替它补上面板凭据。浏览器手里始终没有面板凭据，界面上会显示一个「LuCI 免登录」小标记。
-2. **一次性登录码**：rpcd 用设备本机的 Token 换一张 60 秒有效、只能兑一次的登录码，父窗口用 `postMessage` 递给面板。地址栏与浏览器历史里不放任何长期凭据。
+1. ~~同源网关代签~~：网关先向 rpcd 问一句「这个浏览器带的 LuCI 会话登录了吗」，证实通过才替它补上面板凭据。**这条路在原生 LuCI 上不生效**——LuCI 的会话 cookie 写了 `path=/cgi-bin/luci/`，浏览器不会把它发给 `/cgi-bin/<cgi_prefix>/wrtdeck-api`，网关因此无从证实。它是 fail-closed 的（证实不了就什么都不注入），所以不会出安全问题，只是这一段代码在空转。详见 `docs/ARCHITECTURE.md` 第 13 节。
+2. **一次性登录码**（实际生效）：rpcd 用设备本机的 Token 换一张 60 秒有效、只能兑一次的登录码，父窗口用 `postMessage` 递给面板。地址栏与浏览器历史里不放任何长期凭据。
+
+因此界面上出现的是「退出」而不是「LuCI 免登录」标记：面板拿到的是自己的一张会话凭据（默认存 `sessionStorage`，关掉标签页即失效），不是凭空代签的。**用户的无感体验不受影响——从 LuCI 进来一次口令都不用输。**
 
 两条路都**不会因为认不出人就把门打开**：网关校验不通过就只是原样转发，面板自己那道鉴权照常生效。
 
@@ -296,7 +298,8 @@ uci get uhttpd.main.cgi_prefix      # 设备实际的 CGI 前缀
 | 现象 | 原因与处理 |
 | --- | --- |
 | LuCI 里是一个空白框 | 面板页面没导出。重启服务（`/etc/init.d/wrtdeck restart`）或用手动导出命令；确认 `/www` 可写 |
-| 面板能打开但仍要求输口令 | 网关没就绪或 LuCI 会话没被认出来。看 `uci get uhttpd.main.cgi_prefix` 是否为空；确认 `/www/<前缀>/wrtdeck-api` 存在且可执行 |
+| 面板能打开但仍要求输口令 | 网关没就绪（看 `uci get uhttpd.main.cgi_prefix` 是否为空、`/www/<前缀>/wrtdeck-api` 是否存在且可执行），或 rpcd 没重启导致 `/wrtdeck.handoff` 调不通（`/etc/init.d/rpcd restart`） |
+| 界面显示「退出」而不是「LuCI 免登录」 | 正常。原生 LuCI 上生效的是一次性登录码那条路，面板拿的是自己的会话凭据，不是网关代签的 |
 | 界面显示「同源接口网关不在 Web 服务器的 CGI 前缀下」 | 同上，重装或手动补一次链接：`ln -sf /www/cgi-bin/wrtdeck-api /www$(uci get uhttpd.main.cgi_prefix)/wrtdeck-api` |
 | 点「重新拉取」才有数据，界面写「定时刷新」 | 正常。内嵌时不走 SSE 长连接（一条长连接会在路由器上常驻一个 CGI 进程），改走定时拉取 |
 | 想从局域网直连面板 | 把 `config.json` 的 `listen` 改成 `0.0.0.0:8080`。但要清楚这会让面板绕开 LuCI 的加密方式与登录状态 |
@@ -410,14 +413,14 @@ curl -H "Authorization: Bearer $TOKEN" \
 只升级面板本体：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk           # apk 设备
-opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk      # ipk 设备
+apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk           # apk 设备
+opkg install ./wrtdeck_1.0.2-1_aarch64_cortex-a53.ipk      # ipk 设备
 ```
 
 装了薄壳的话**两个包一起升**——薄壳负责同源网关与登录交接，两侧的约定是按版本对齐的：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
 ```
 
 卸载：
@@ -436,7 +439,7 @@ opkg remove wrtdeck luci-app-wrtdeck        # ipk 设备
 
 ### 从 1.0.0 升级
 
-1.0.1 有两处会让旧配置「看着正常、其实已经不是这个版本的形态」的变化，升级路径上会自动处理掉：
+从 1.0.1 起有两处会让旧配置「看着正常、其实已经不是这个版本的形态」的变化，升级路径上会自动处理掉：
 
 | 变化 | 升级时会发生什么 |
 | --- | --- |
@@ -455,6 +458,25 @@ ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
 
 > LuCI 里点进去是个**空白框**，几乎只有一个原因：两个包版本不一致。页面是面板本体启动时导出的，只升薄壳不升面板时那个文件根本不存在。两个包一起升。
 
+### 从 1.0.1 升级
+
+1.0.2 只修薄壳（`luci-app-wrtdeck`）侧的问题，面板本体与协议约定都没动。这四个毛病都只有真机才暴露：包结构校验、接口契约断言、本地桩测试当时全是绿的，所以装过 1.0.1 的设备多半会踩到。
+
+| 现象 | 根因 |
+| --- | --- |
+| 点 LuCI 菜单直接 500，页面打不开 | `menu.d` 的 `depends.acl` 写成了对象，而 ucode 版 dispatcher 用展开语法读取、要求是数组 |
+| 页面能开，但只有一个空白框 | 薄壳把服务判定成了「未运行」，于是提前返回、根本不创建 iframe。`jshn` 的 `json_add_boolean` 只认 `0`/`1`，传字符串 `"true"` 会被静默序列化成 `false` |
+| 空白框里提示面板地址 404 | iframe 地址被多拼了一层 CGI 前缀。面板页面在 Web 根目录（`/www/wrtdeck/`），只有 API 网关挂在 `cgi_prefix` 下 |
+| 服务明明在跑，却显示「服务未运行」 | 判定只用 `pgrep -f`；`pgrep`/`pidof` 来自 procps-ng，最小固件里没有。现在以 procd 的 `status` 为主判据 |
+
+升级动作就是把两个包一起换掉，没有需要手工执行的步骤：
+
+```sh
+apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
+```
+
+`config.json`、`secrets.json` 与 `registry.json` 都不受这次升级影响：本版没有任何迁移逻辑，装过 1.0.1 的设备升上来就是原样。你如果没装薄壳，只升面板本体也可以。
+
 ### 从旧包名 owdash 升级
 
 1.0.0 之前的包名、二进制、init 脚本与配置目录都叫 `owdash`（`WrtDeck` 只是产品名）。
@@ -464,7 +486,7 @@ ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
 /etc/init.d/owdash stop
 apk del owdash luci-app-wrtdeck            # 或 opkg remove owdash luci-app-wrtdeck
 mv /etc/owdash /etc/wrtdeck                # 想保留口令、Token 与注册项时必须做这一步
-apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
 ```
 
 - 不迁移 `/etc/owdash` 也能启动，但会当成全新安装：初始口令回到 `admin`，API Token 重新生成。
@@ -484,10 +506,10 @@ make luci                                           # 只要薄壳（与架构�
 GOARCH=arm     make apk                             # ARMv7
 GOARCH=amd64   make apk                             # x86_64
 GOARCH=mipsle  make ipk                             # MIPS 小端
-VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.1-r1
+VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.2-r1
 ```
 
-版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.1`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
+版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.2`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
 
 产物在 `dist/`：
 

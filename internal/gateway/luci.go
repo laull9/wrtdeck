@@ -25,6 +25,24 @@ var luci_cookie_names = []string{"sysauth_https", "sysauth_http", "sysauth"}
 //
 // 校验不通过时不做任何降级处理，请求照样转发：面板自己还有一道鉴权，
 // 前端也能靠一次性登录码完成交接，功能不会因此中断。
+//
+// **实机边界（2026-09-21 在 OpenWrt 25.12.5 上实测）**：这一段在原生 LuCI 上
+// 实际走不到——LuCI 把会话 cookie 的作用域限定在它自己的路径下：
+//
+//	Set-Cookie: sysauth_https=<sid>; path=/cgi-bin/luci/; SameSite=strict; HttpOnly
+//
+// （见 /usr/share/ucode/luci/dispatcher.uc，path 取自 build_url()）。cookie 带
+// path 前缀匹配，浏览器因此**不会**把它发给 /cgi-bin/<cgi_prefix>/wrtdeck-api，
+// session_id 恒为空，probe_session 一次也不会被调用。实测请求时序：
+//
+//	GET  .../wrtdeck-api/api/v1/session/me   401   <- 这里没拿到 cookie
+//	POST .../wrtdeck-api/api/v1/session/redeem 200 <- 前端改走一次性登录码
+//	GET  .../wrtdeck-api/api/v1/dashboard  (Bearer) 200
+//
+// 也就是说，真正让用户免登录的是薄壳经 rpcd 换来的那张一次性登录码，
+// 不是这里。之所以保留这条分支：它 fail-closed（拿不到 cookie 就什么都不注入），
+// 且一旦 LuCI 把 cookie 放到 / 上（或前面挂了一层自己签发 cookie 的反向代理），
+// 它就会自动生效。改动这里前请先确认那个前提是否已经改变。
 func authorize(req *http.Request, cookie string, opts Options) error {
 	if req.Header.Get("Authorization") != "" {
 		// 浏览器自己带着凭据（一次性登录码换来的会话），原样转发即可

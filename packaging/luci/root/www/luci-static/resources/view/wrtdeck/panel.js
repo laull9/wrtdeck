@@ -49,10 +49,14 @@ function normalize_prefix(value, fallback) {
 	return text.replace(/\/+$/, '');
 }
 
-// 面板页面地址：同源相对路径，因此自动继承 LuCI 的域名、端口与加密方式。
-// 写死 index.html 而不依赖目录索引，因为索引文件名在 Web 服务器上是可配置的。
-function panel_page(cgi_prefix) {
-	return normalize_prefix(cgi_prefix, '/cgi-bin') + '/' + panel_dir + '/index.html';
+// 面板页面地址：面板在本体启动时被导出到 Web 根目录下的 panel_dir，
+// **与 CGI 前缀无关**——挂在 cgi_prefix 下的只有 API 网关那一份网关脚本。
+// 把 CGI 前缀也拼进页面地址会得到一个必然 404 的 URL（/cgi-bin/wrtdeck/...），
+// 现象是 LuCI 里那个面板框一片空白。同源根相对路径的好处是自动继承 LuCI 的
+// 域名、端口与加密方式。写死 index.html 而不依赖目录索引，因为索引文件名在
+// Web 服务器上是可配置的。
+function panel_page() {
+	return '/' + panel_dir + '/index.html';
 }
 
 // 面板 API 前缀：网关把 cgi_prefix 下的这一段转交给面板本体
@@ -63,7 +67,7 @@ function panel_api(cgi_prefix) {
 // 面板页面需要知道 API 前缀，用查询参数告诉它；
 // embed=1 让它知道自己正被别的页面嵌着，从而走免登录与降级通道。
 function panel_src(status) {
-	return panel_page(status.cgi_prefix) +
+	return panel_page() +
 		'?embed=1&api=' + encodeURIComponent(panel_api(status.cgi_prefix));
 }
 

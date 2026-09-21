@@ -61,9 +61,24 @@ cgi_prefix() {
 	printf '%s' "${_prefix%/}"
 }
 
-# 服务是否在运行
+# 服务是否在运行。
+#
+# 主判据是 procd（rc.common 的 status 走 ubus 查服务实例），任何 OpenWrt 都自带。
+# 不拿 pgrep 当主判据：它由 procps-ng 提供，最小固件的 busybox 里没有编入，
+# 缺席时这里会被静默判成「未运行」——现象是 LuCI 里永远显示服务没起来，
+# 而且薄壳会因为 running 为假而提前返回，连面板框都不渲染。
 service_running() {
-	pgrep -f "$PROG" >/dev/null 2>&1
+	if [ -x /etc/init.d/wrtdeck ] && /etc/init.d/wrtdeck status >/dev/null 2>&1; then
+		return 0
+	fi
+	# 退路：pidof 与 pgrep 都来自可选包，谁在就用谁
+	if command -v pidof >/dev/null 2>&1 && pidof wrtdeck >/dev/null 2>&1; then
+		return 0
+	fi
+	if command -v pgrep >/dev/null 2>&1 && pgrep -f "$PROG" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
 }
 
 # 服务版本
@@ -122,16 +137,19 @@ do_status() {
 	_listen="$(panel_listen)"
 	_port="$(panel_port "$_listen")"
 	_prefix="$(cgi_prefix)"
-	_running=false
-	service_running && _running=true
+	_running=0
+	service_running && _running=1
 
 	# 初始口令是公开信息，LuCI 里应当主动提醒，而不是等用户从面板里自己发现
-	_pending=false
+	_pending=0
 	if [ -f "$CONF_DIR/secrets.json" ] &&
 		grep -q '"must_change_password"[[:space:]]*:[[:space:]]*true' "$CONF_DIR/secrets.json"; then
-		_pending=true
+		_pending=1
 	fi
 
+	# 布尔量一律用 0/1。jshn 的 json_add_boolean 只认数字：喂它 shell 字符串
+	# "true" 会静默序列化成 JSON 的 false，不报任何错。真机上踩过的坑——
+	# running 恒为 false，薄壳于是判定「服务未运行」并提前 return，连面板框都不渲染。
 	json_init
 	json_add_boolean "running" "$_running"
 	json_add_boolean "installed" "$([ -x "$PROG" ] && echo 1 || echo 0)"

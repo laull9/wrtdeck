@@ -570,7 +570,7 @@ const page = ref<'dashboard' | 'registry'>('dashboard')
 | --- | --- | --- |
 | 页面来源 | 面板自己 | 设备自带的 Web 服务器，`/www/wrtdeck/` |
 | API 前缀 | 当前源的 `/api/v1` | `<cgi_prefix>/wrtdeck-api`，由查询参数传入 |
-| 凭据 | 口令登录或 Token | 同源网关代签，浏览器手里没有凭据 |
+| 凭据 | 口令登录或 Token | 薄壳递来的一次性登录码，兑换成面板自己的会话凭据 |
 | 实时通道 | SSE（4 秒内无事件则降级为轮询） | 直接轮询，不试长连接 |
 
 `src/lib/embed.ts` 只做一件事：从 `window.location.search` 里取出 `api` 与 `embed`。它**只认同源相对路径**——带上主机名的地址会让面板把凭据发到另一台服务器上，而查询参数是任何链接都改得动的，不能给它这种机会。
@@ -818,9 +818,28 @@ TLS 可选但对公网暴露是强建议：
 
 `cgi_prefix` 在设备上可配置，包内固定把网关放 `/www/cgi-bin/`，装完由安装脚本按 `uci get uhttpd.main.cgi_prefix` 补一个符号链接。
 
-#### 免登录：先证实，再补凭据
+#### 免登录之一：先证实，再补凭据（原生 LuCI 上不生效）
 
-面板本体现在没有对外的监听地址，于是「从 LuCI 进来」这件事只能靠网关识别。网关运行在 CGI 里，**不在 LuCI 的鉴权范围内**，任何人都够得着它，因此规则只有一条：
+被测到的事实是：**这条分支在原生 LuCI 上永远走不到**，所以别把它当成免登录的实现。原因是一个很容易忽略的细节——LuCI 把会话 cookie 的作用域限定在它自己那个路径下：
+
+```text
+Set-Cookie: sysauth_https=<sid>; path=/cgi-bin/luci/; SameSite=strict; HttpOnly
+                                ^^^^^^^^^^^^^^^^ 取自 dispatcher.uc 里的 build_url()
+```
+
+cookie 按 path 前缀匹配发送，浏览器因此**不会**把它带给 `/cgi-bin/<cgi_prefix>/wrtdeck-api`。网关拿到的 `Cookie` 头里没有 `sysauth_*`，`session_id` 恒为空，一次 ubus 校验都不会发生。
+
+2026-09-21 在 OpenWrt 25.12.5 上实测到的请求时序（浏览器 + 真实设备）：
+
+```text
+GET  /cgi-bin/wrtdeck-api/api/v1/session/me      401   ← 网关手里没有 cookie，无从证实
+POST /cgi-bin/wrtdeck-api/api/v1/session/redeem  200   ← 前端改走下一节的一次性登录码
+GET  /cgi-bin/wrtdeck-api/api/v1/dashboard   (Bearer) 200   ← 面板自己的鉴权生效
+```
+
+设计本身没写错，代价也没有：这一段是 **fail-closed** 的，拿不到 cookie 就什么都不注入，请求照常转发；且一旦前提改变（比如把 LuCI 换到 cookie 路径为 `/` 的部署，或前面挂一层自己签发 cookie 的反向代理），它会自动接上。保留它是为了这个可能性，不是因为它在跑。
+
+原本的设想如下，读的时候请带着上面这个前提：
 
 > 先证明调用方确实登录过 LuCI，再注入面板凭据。
 
@@ -844,9 +863,9 @@ TLS 可选但对公网暴露是强建议：
 - **`/api/v1/session/handoff` 由网关明确拒绝**。网关进程恰好跑在设备本机、从回环发起请求，放它过去就等于让任何够得着设备 Web 端口的人凭空换一张会话凭据。
 - **只转发 `/api/v1`**。网关一旦能被当作通用代理，就等于给设备开了一个没有鉴权的跳板。
 
-#### 一跳交接（一次性登录码）仍然保留
+#### 免登录之二：一跳交接（一次性登录码）——实际生效的那条
 
-网关认不出人时（会话 cookie 缺失、设备上没有 ubus、rpcd 异常等），还有第二个手段：rpcd 用设备本机的 Token 换一张一次性登录码交给浏览器。
+**这是原生 LuCI 上真正让用户免登录的机制**，上面那条只是理论上存在。薄壳经 rpcd 用设备本机的 Token 换一张一次性登录码，父窗口用 postMessage 递给面板，面板兑换成会话凭据：
 
 ```text
 LuCI 前端 → rpcd /wrtdeck.handoff

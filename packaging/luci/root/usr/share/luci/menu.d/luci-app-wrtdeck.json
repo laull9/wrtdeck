@@ -7,9 +7,7 @@
 			"path": "wrtdeck/panel"
 		},
 		"depends": {
-			"acl": {
-				"luci-app-wrtdeck": [ "read" ]
-			}
+			"acl": [ "luci-app-wrtdeck" ]
 		}
 	}
 }
