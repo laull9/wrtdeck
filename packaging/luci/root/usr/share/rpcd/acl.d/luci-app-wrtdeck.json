@@ -1,0 +1,17 @@
+{
+	"luci-app-wrtdeck": {
+		"description": "WrtDeck 面板：查看服务状态、免密进入面板、启停服务",
+
+		"read": {
+			"ubus": {
+				"wrtdeck": [ "status", "handoff" ]
+			}
+		},
+
+		"write": {
+			"ubus": {
+				"wrtdeck": [ "control" ]
+			}
+		}
+	}
+}

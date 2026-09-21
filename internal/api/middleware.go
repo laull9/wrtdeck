@@ -2,9 +2,11 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -120,26 +122,129 @@ func with_limit(max_bytes int, next http.Handler) http.Handler {
 	})
 }
 
-// with_auth 校验 Bearer Token，health 与静态资源不参与校验
+// 凭据角色。两种凭据都能访问全部接口，区别只在生命周期与来源：
+// API Token 长期有效，供脚本与设备本机使用；会话凭据会过期，供浏览器登录使用。
+const (
+	role_api     = "api"
+	role_session = "session"
+)
+
+// auth_ctx 描述本次请求用的是哪种凭据
+type auth_ctx struct {
+	role  string
+	token string
+}
+
+// auth_key 是请求上下文里存放 auth_ctx 的键
+type auth_key_type struct{}
+
+// auth_from 取出本次请求的凭据信息，未鉴权时返回空值
+func auth_from(r *http.Request) auth_ctx {
+	ctx, _ := r.Context().Value(auth_key_type{}).(auth_ctx)
+	return ctx
+}
+
+// with_auth 校验 Bearer 凭据，health 与静态资源不参与校验。
+//
+// 凭据可以是 API Token，也可以是登录后拿到的会话凭据。两者都校验通过才能继续。
+// 另外还有一条状态约束：仍然使用初始口令时，会话凭据只能用于改口令与登出，
+// 否则「首启默认口令」就等同于一个没有任何限制的后门。
 func (s *Server) with_auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.Auth.Disabled || !strings.HasPrefix(r.URL.Path, "/api/") ||
-			r.URL.Path == "/api/v1/health" {
+		if s.cfg.Auth.Disabled || !strings.HasPrefix(r.URL.Path, "/api/") || open_path(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		token := bearer_token(r)
-		// SSE 无法自定义请求头时允许通过查询参数传 Token
+		// SSE 无法自定义请求头时允许通过查询参数传 Token。
+		// 访问日志只记路径不记查询串，因此凭据不会因此落进日志。
 		if token == "" && r.URL.Path == "/api/v1/events" {
 			token = r.URL.Query().Get("token")
 		}
-		expected := s.secrets.Token()
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
-			write_error(w, http.StatusUnauthorized, "unauthorized", "缺少或错误的 Bearer Token")
+		if token == "" {
+			write_error(w, http.StatusUnauthorized, "unauthorized", "未登录，请先登录面板")
 			return
+		}
+
+		role := ""
+		if subtle.ConstantTimeCompare([]byte(token), []byte(s.secrets.Token())) == 1 {
+			role = role_api
+		} else if _, ok := s.sessions.lookup(token); ok {
+			role = role_session
+		}
+		if role == "" {
+			write_error(w, http.StatusUnauthorized, "unauthorized", "凭据无效或已过期，请重新登录")
+			return
+		}
+		if role == role_session && s.secrets.MustChange() && !password_change_path(r.URL.Path) {
+			write_error(w, http.StatusForbidden, "password_change_required",
+				"面板仍在使用初始口令，请先修改口令")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), auth_key_type{}, auth_ctx{role: role, token: token})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// open_path 列出自身就是凭据、因此不走 Bearer 校验的接口。
+// health 只回元信息；login 认口令；redeem 认一次性登录码，且两者都在内部校验来源。
+func open_path(path string) bool {
+	switch path {
+	case "/api/v1/health", "/api/v1/session/login", "/api/v1/session/redeem":
+		return true
+	}
+	return false
+}
+
+// password_change_path 列出初始口令状态下仍然放行的接口。
+// 会话必须能问到自己的状态、能改口令、能登出，否则用户会被锁在门外无路可走。
+func password_change_path(path string) bool {
+	switch path {
+	case "/api/v1/session/me", "/api/v1/session/password", "/api/v1/session/logout":
+		return true
+	}
+	return false
+}
+
+// with_security_headers 给所有响应加上安全头，按「面板可能直接暴露在公网」来配。
+func (s *Server) with_security_headers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := w.Header()
+		header.Set("Referrer-Policy", "no-referrer")
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		// 点击劫持用 CSP 挡：面板要被 LuCI 嵌进另一端口的页面，同源策略拦不住它，
+		// 因此放行同主机的任意端口，其余来源一律不许套框架。
+		// 这里不用 X-Frame-Options：它只支持同源或全放行，会连带把 LuCI 的嵌入也挡掉。
+		host := r.Host
+		if parsed_host, _, err := net.SplitHostPort(r.Host); err == nil {
+			host = parsed_host
+		}
+		header.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
+				"script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "+
+				"frame-ancestors 'self' http://"+host+":* https://"+host+":*")
+
+		// 只有确实走进 TLS 才发 HSTS：明文监听上发 HSTS 会把用户自己锁在门外
+		if request_is_secure(r) {
+			header.Set("Strict-Transport-Security", "max-age=15552000")
+		}
+		// 接口响应里有状态与凭据，禁止任何中间层缓存
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			header.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// request_is_secure 判断这次请求是否经 TLS 到达，兼容反向代理转发的场景
+func request_is_secure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // bearer_token 从 Authorization 头中取出 Token

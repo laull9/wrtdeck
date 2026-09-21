@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -12,10 +13,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"owdash/internal/api"
+	"owdash/internal/certs"
 	"owdash/internal/config"
 	"owdash/internal/engine"
 	"owdash/internal/registry"
@@ -32,13 +35,15 @@ const shutdown_timeout = 5 * time.Second
 
 // options 汇总命令行开关
 type options struct {
-	config_path  string
-	data_dir     string
-	listen       string
-	dev          bool
-	seed_demo    bool
-	print_token  bool
-	show_version bool
+	config_path    string
+	data_dir       string
+	listen         string
+	dev            bool
+	seed_demo      bool
+	print_token    bool
+	show_version   bool
+	reset_set      bool
+	reset_password string
 }
 
 // main 解析参数后启动服务并等待退出信号
@@ -63,6 +68,13 @@ func parse_flags() options {
 	flag.BoolVar(&opts.seed_demo, "seed-demo", false, "注册表为空时写入自检示例注册项")
 	flag.BoolVar(&opts.print_token, "print-token", false, "打印 API Token 后退出")
 	flag.BoolVar(&opts.show_version, "version", false, "打印版本后退出")
+	// 口令重置是设备上唯一的找回手段：忘记口令时从串口或 SSH 以 root 执行
+	flag.Func("reset-password", "把登录口令重置为给定值后退出；值为 - 时从标准输入读取一行",
+		func(value string) error {
+			opts.reset_set = true
+			opts.reset_password = value
+			return nil
+		})
 	flag.Parse()
 	return opts
 }
@@ -101,6 +113,9 @@ func run(opts options) error {
 	if opts.print_token {
 		fmt.Println(secrets.Token())
 		return nil
+	}
+	if opts.reset_set {
+		return reset_password(secrets, opts.reset_password)
 	}
 
 	store := registry.NewStore(cfg.RegistryPath())
@@ -149,6 +164,18 @@ func run(opts options) error {
 	server := api.NewServer(cfg, store, states, hub, history, pool, exec, sched, secrets,
 		webui.Handler(), version, opts.dev)
 
+	// TLS 证书在监听之前准备好：证书写错时应当启动失败，而不是等到第一个请求
+	tls_result, err := certs.Prepare(certs.Settings{
+		Enabled:        cfg.TLS.Enabled,
+		CertFile:       cfg.TLS.CertFile,
+		KeyFile:        cfg.TLS.KeyFile,
+		DataDir:        cfg.DataDir,
+		AutoSelfSigned: cfg.TLS.SelfSignedEnabled(),
+	})
+	if err != nil {
+		return err
+	}
+
 	http_server := &http.Server{
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -161,15 +188,36 @@ func run(opts options) error {
 		return fmt.Errorf("监听 %s 失败: %w", cfg.Listen, err)
 	}
 
+	// 可选的明文监听：只做 308 跳转，让记着旧地址的书签也能落到 HTTPS 上
+	var redirect_server *http.Server
+	if tls_result.Enabled && cfg.TLS.RedirectListen != "" {
+		redirect_listener, err := net.Listen("tcp", cfg.TLS.RedirectListen)
+		if err != nil {
+			return fmt.Errorf("监听 %s 失败: %w", cfg.TLS.RedirectListen, err)
+		}
+		redirect_server = &http.Server{Handler: redirect_handler(cfg.Listen), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := redirect_server.Serve(redirect_listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("明文跳转监听退出: %v", err)
+			}
+		}()
+	}
+
 	sched.Start(root_ctx)
 	defer sched.Stop()
 
-	banner(cfg, opts, secrets.Token(), secrets.FromEnv())
+	banner(cfg, opts, secrets, tls_result)
 
 	err_chan := make(chan error, 1)
 	go func() {
-		if err := http_server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			err_chan <- err
+		var serve_err error
+		if tls_result.Enabled {
+			serve_err = http_server.ServeTLS(listener, tls_result.CertFile, tls_result.KeyFile)
+		} else {
+			serve_err = http_server.Serve(listener)
+		}
+		if serve_err != nil && !errors.Is(serve_err, http.ErrServerClosed) {
+			err_chan <- serve_err
 		}
 	}()
 
@@ -182,7 +230,54 @@ func run(opts options) error {
 
 	shutdown_ctx, cancel := context.WithTimeout(context.Background(), shutdown_timeout)
 	defer cancel()
+	if redirect_server != nil {
+		_ = redirect_server.Shutdown(shutdown_ctx)
+	}
 	return http_server.Shutdown(shutdown_ctx)
+}
+
+// redirect_handler 把明文请求 308 跳到面板的 HTTPS 地址，主机名沿用请求里的，
+// 这样设备有多个地址时也不会把用户引到错误的名字上。
+func redirect_handler(tls_addr string) http.Handler {
+	_, tls_port, err := net.SplitHostPort(tls_addr)
+	if err != nil || tls_port == "" {
+		tls_port = "443"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if parsed_host, _, err := net.SplitHostPort(r.Host); err == nil {
+			host = parsed_host
+		}
+		if host == "" {
+			http.Error(w, "无法确定主机名", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "https://"+net.JoinHostPort(host, tls_port)+r.URL.RequestURI(),
+			http.StatusPermanentRedirect)
+	})
+}
+
+// reset_password 重置登录口令，是设备主人忘记口令时唯一的找回手段。
+// 它需要能读到密钥文件，因此实际权限门槛与 root 等价；API Token 不受影响。
+func reset_password(secrets *config.Secrets, value string) error {
+	password := strings.TrimSpace(value)
+	if password == "" || password == "-" {
+		fmt.Fprint(os.Stderr, "请输入新的登录口令: ")
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			return fmt.Errorf("读取口令失败: %w", err)
+		}
+		password = strings.TrimSpace(line)
+	}
+	if err := config.CheckPasswordStrength(password); err != nil {
+		return err
+	}
+	if err := secrets.SetPassword(password, false); err != nil {
+		return err
+	}
+	fmt.Println("登录口令已重置，请用新口令登录面板。")
+	fmt.Println("API Token 未发生变化，脚本与设备本机调用不受影响。")
+	return nil
 }
 
 // seed_demo 写入示例注册项，注册项通过 ${secret.api_token} 回调本服务
@@ -197,18 +292,49 @@ func seed_demo(store *registry.Store, cfg *config.Config) error {
 	return nil
 }
 
-// banner 打印启动信息与访问地址
-func banner(cfg *config.Config, opts options, token string, from_env bool) {
+// banner 打印启动信息、访问地址与暴露面告警
+func banner(cfg *config.Config, opts options, secrets *config.Secrets, tls_result certs.Result) {
+	scheme := "http"
+	if tls_result.Enabled {
+		scheme = "https"
+	}
 	log.Printf("WrtDeck %s 启动中", version)
-	log.Printf("监听地址: %s", cfg.Listen)
+	log.Printf("监听地址: %s://%s", scheme, cfg.Listen)
 	log.Printf("数据目录: %s", cfg.DataDir)
 	if cfg.Auth.Disabled {
 		log.Printf("鉴权状态: 已关闭（开发模式）")
-	} else if from_env {
-		log.Printf("鉴权状态: 已开启，Token 来自环境变量 %s", cfg.Auth.TokenEnv)
 	} else {
-		log.Printf("鉴权状态: 已开启，Token 见 %s", cfg.SecretsPath())
+		log.Printf("鉴权状态: 已开启，口令登录 + API Token 双凭据，会话有效期 %s", cfg.Auth.SessionTTL())
+		if secrets.FromEnv() {
+			log.Printf("API Token: 来自环境变量 %s", cfg.Auth.TokenEnv)
+		} else {
+			log.Printf("API Token: 见 %s（/etc/init.d/owdash token 可直接打印）", cfg.SecretsPath())
+		}
+		if secrets.MustChange() {
+			// 这里刻意把默认口令打出来：它本来就是写在文档与安装提示里的公开信息，
+			// 打印出来才能让用户第一眼就知道该改什么。
+			log.Printf("初始口令: 仍为 %q，请登录后立即修改（未修改前只允许内网登录）", config.DefaultPassword)
+		} else {
+			log.Printf("登录口令: 已于 %s 修改", secrets.PasswordUpdated().Format("2006-01-02 15:04"))
+		}
+		log.Printf("登录限速: 单来源 %d 次失败即锁定 %s，连续失败成倍延长",
+			cfg.Auth.MaxAttempts(), cfg.Auth.Lockout())
 	}
+
+	if tls_result.Enabled {
+		log.Printf("TLS: 已启用，证书 %s，SHA-256 指纹 %s", tls_result.CertFile, tls_result.Fingerprint)
+		if tls_result.SelfSigned {
+			log.Printf("TLS: 当前是自签证书，浏览器会提示不受信任；公网访问建议换正式证书或置于反向代理之后")
+		}
+	} else if !cfg.Auth.Disabled {
+		if listen_is_public(cfg.Listen) {
+			log.Printf("警告: 监听 %s 且未启用 TLS，口令与 Token 都是明文传输；"+
+				"要暴露到公网请配置 tls.cert_file / tls.key_file，或置于 HTTPS 反向代理之后", cfg.Listen)
+		} else {
+			log.Printf("TLS: 未启用（当前只监听本机地址）")
+		}
+	}
+
 	if cfg.Limits.HistoryLimit > 0 {
 		log.Printf("运行历史: 每个信息源保留 %d 条采样（仅内存）", cfg.Limits.HistoryLimit)
 	} else {
@@ -221,6 +347,20 @@ func banner(cfg *config.Config, opts options, token string, from_env bool) {
 	if !cfg.Exec.Enabled {
 		log.Printf("Exec 传输: 已禁用（默认关闭），启用需在配置中设置 exec.enabled")
 	}
+}
+
+// listen_is_public 判断监听地址是否超出了本机范围
+func listen_is_public(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return true
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // local_listen 在开发模式下把监听地址收敛到回环地址

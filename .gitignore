@@ -23,3 +23,6 @@ node_modules/
 *.tsbuildinfo
 *.tmp
 *.log
+
+# 本地 apk 签名私钥：只在本机打包时使用，绝不入库
+/packaging/keys/

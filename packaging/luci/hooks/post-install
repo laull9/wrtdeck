@@ -1,0 +1,14 @@
+#!/bin/sh
+# luci-app-wrtdeck 安装后要做的两件事：
+#   1. 重启 rpcd：ACL 与 /usr/libexec/rpcd/wrtdeck 都是 rpcd 启动时读的，
+#      不重启就会出现「菜单点得进去、一调 ubus 就报权限不足」；
+#   2. 清掉 LuCI 的菜单缓存：否则新菜单要等缓存过期才出现。
+#
+# apk 与 ipk 共用这一份脚本，安装脚本名由各自的包格式决定。
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/etc/init.d/rpcd restart 2>/dev/null
+rm -f /tmp/luci-indexcache 2>/dev/null
+rm -rf /tmp/luci-modulecache 2>/dev/null
+
+exit 0

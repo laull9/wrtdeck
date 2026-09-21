@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // 内置默认值，与架构文档中的资源预算保持一致
@@ -20,12 +21,70 @@ const (
 	default_mqtt_keepalive_s  = 30
 	default_mqtt_connect_ms   = 5000
 	default_mqtt_reconnect_ms = 30000
+
+	// 认证与会话
+	default_session_ttl_minutes = 720
+	default_max_login_attempts  = 5
+	default_lockout_minutes     = 15
 )
 
 // AuthConfig 控制 API 鉴权行为
 type AuthConfig struct {
 	Disabled bool   `json:"disabled,omitempty"`
 	TokenEnv string `json:"token_env,omitempty"`
+
+	// SessionTTLMinutes 是登录会话的有效期，默认 12 小时
+	SessionTTLMinutes int `json:"session_ttl_minutes,omitempty"`
+	// MaxLoginAttempts 是单个来源在窗口内允许的失败次数，超出即锁定
+	MaxLoginAttempts int `json:"max_login_attempts,omitempty"`
+	// LockoutMinutes 是首次锁定的时长，连续失败会成倍延长
+	LockoutMinutes int `json:"lockout_minutes,omitempty"`
+}
+
+// TLSConfig 控制面板自身的 HTTPS。
+//
+// 面板可能被直接暴露在公网，而口令是明文提交的，因此这里提供两种做法：
+// 自带证书文件（推荐，配合域名与 Let's Encrypt），或自动生成自签证书
+// （只适合局域网，浏览器会提示不受信任）。
+type TLSConfig struct {
+	Enabled  bool   `json:"enabled,omitempty"`
+	CertFile string `json:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty"`
+	// AutoSelfSigned 为 nil 表示未配置，按「启用时自动生成自签证书」处理
+	AutoSelfSigned *bool `json:"auto_self_signed,omitempty"`
+	// RedirectListen 非空时额外监听该地址，把明文请求 308 跳到 HTTPS
+	RedirectListen string `json:"redirect_listen,omitempty"`
+}
+
+// SelfSignedEnabled 返回未提供证书文件时是否自动生成自签证书
+func (t TLSConfig) SelfSignedEnabled() bool {
+	return t.AutoSelfSigned == nil || *t.AutoSelfSigned
+}
+
+// SessionTTL 返回会话有效期
+func (a AuthConfig) SessionTTL() time.Duration {
+	minutes := a.SessionTTLMinutes
+	if minutes <= 0 {
+		minutes = default_session_ttl_minutes
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// MaxAttempts 返回单来源允许的登录失败次数
+func (a AuthConfig) MaxAttempts() int {
+	if a.MaxLoginAttempts <= 0 {
+		return default_max_login_attempts
+	}
+	return a.MaxLoginAttempts
+}
+
+// Lockout 返回首次锁定时长
+func (a AuthConfig) Lockout() time.Duration {
+	minutes := a.LockoutMinutes
+	if minutes <= 0 {
+		minutes = default_lockout_minutes
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 // ExecConfig 控制 Exec 传输的开关与白名单
@@ -62,6 +121,7 @@ type Config struct {
 	DataDir  string       `json:"data_dir"`
 	SeedDemo bool         `json:"seed_demo"`
 	Auth     AuthConfig   `json:"auth"`
+	TLS      TLSConfig    `json:"tls"`
 	Exec     ExecConfig   `json:"exec"`
 	Limits   LimitsConfig `json:"limits"`
 	Workers  WorkerConfig `json:"workers"`

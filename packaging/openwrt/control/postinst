@@ -7,7 +7,9 @@ if [ ! -f /etc/owdash/.installed ]; then
 	/etc/init.d/owdash enable
 	/etc/init.d/owdash start
 	echo "WrtDeck 已安装并启动，访问 http://<设备IP>:8080"
-	echo "API Token 可用 '/etc/init.d/owdash token' 查看"
+	echo "初始口令 admin：首次登录后必须立即修改，否则只允许内网登录"
+	echo "  忘记口令：/etc/init.d/owdash password"
+	echo "  API Token：/etc/init.d/owdash token"
 else
 	/etc/init.d/owdash restart
 fi

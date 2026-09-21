@@ -32,11 +32,13 @@ func Handler() http.Handler {
 			serve_index(w, r, sub)
 			return
 		}
-		// index.html 不缓存，保证升级后立即生效；带哈希的静态资源可以长缓存
-		if target == "index.html" {
-			w.Header().Set("Cache-Control", "no-cache")
-		} else {
+		// Vite 只给打包产物加内容哈希，它们都落在 assets/ 下，可以长缓存；
+		// 其余文件（index.html、favicon、public 下的脚本）名字不变，
+		// 一旦长缓存，升级后浏览器还会拿旧版本，因此只做协商缓存。
+		if strings.HasPrefix(target, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=86400")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		files.ServeHTTP(w, r)
 	})

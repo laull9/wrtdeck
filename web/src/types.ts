@@ -146,10 +146,35 @@ export interface ServerInfo {
   uptime_s: number
   started_at: string
   dev: boolean
+  // 服务端是否关闭了鉴权（开发模式）
   auth_disabled: boolean
+  // 仍在使用初始口令，前端必须先引导用户改口令
+  must_change_password: boolean
+  // 登录会话的有效期（分钟）
+  session_ttl_minutes: number
+  // 服务端是否启用了 HTTPS
+  tls_enabled: boolean
   sources: number
   actions: number
   subscribers: number
+}
+
+// 健康检查响应，免鉴权，是前端引导凭据时唯一能先拿到的信息
+export interface HealthResponse {
+  status: string
+  version: string
+  uptime_s: number
+  server: ServerInfo
+}
+
+// 登录、兑换登录码、改口令共用的响应
+export interface SessionResponse {
+  // 会话凭据；用长期 API Token 调用改口令接口时为空，表示继续用原凭据
+  token: string
+  expires_in_s: number
+  must_change_password: boolean
+  // 凭据种类：password / handoff / session / api / auth_disabled
+  mode: string
 }
 
 // Dashboard 首屏数据

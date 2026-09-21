@@ -9,8 +9,9 @@ PROG=/usr/bin/owdash
 CONF_DIR=/etc/owdash
 CONF="$CONF_DIR/config.json"
 
-EXTRA_COMMANDS="token"
-EXTRA_HELP="	token   打印当前 API Token"
+EXTRA_COMMANDS="token password"
+EXTRA_HELP="	token    打印当前 API Token
+	password 重置登录口令（忘记口令时用）"
 
 start_service() {
 	# 首次启动时 conf 目录可能不存在，配置与 Token 都在这里生成
@@ -37,7 +38,13 @@ reload_service() {
 	start
 }
 
-# token 打印当前 API Token，供首次登录面板使用
+# token 打印当前 API Token，供脚本与运维使用
 token() {
 	"$PROG" -config "$CONF" -print-token
+}
+
+# password 重置登录口令。这是设备主人忘记口令时唯一的找回手段，
+# 因此做成 init 的子命令，与设备上其它服务的排障方式保持一致。
+password() {
+	"$PROG" -config "$CONF" -reset-password -
 }

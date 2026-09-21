@@ -68,11 +68,14 @@ Dashboard 自动出现“开机”按钮。
 | Push      | 原生 `EventSource` / SSE | 比 WebSocket 更适合单向状态推送                        |
 | Backend   | Go `net/http`          | 不引入 Gin/Echo/Fiber                           |
 | Static UI | `embed.FS`             | Vue 构建产物直接进入 ELF                             |
-| MQTT      | Eclipse Paho Go        | 可靠处理 MQTT 连接、重连和 QoS                         |
+| Auth      | 自研双凭据 + 内存会话      | 不引入 JWT / OAuth / bcrypt 等体系，零第三方依赖             |
+| MQTT      | 自研 MQTT 3.1.1 客户端     | 零第三方依赖；只需 3.1.1 子集，连接池与重连自己掌控                |
 | Storage   | JSON + RAM             | 不使用 SQLite                                   |
 | Service   | OpenWrt procd          | 开机启动、respawn、日志                              |
 
-MQTT 推荐 `eclipse-paho/paho.golang`；其 `autopaho` 可以管理连接和自动重连，因此每个 MQTT broker 可以维护一个共享长连接，而不是每次点击按钮重新连接。
+MQTT 采用自研的 3.1.1 客户端（`internal/mqtt/`），自己维护连接池与重连恢复订阅：同一 broker 只保留一条长连接供多个注册项复用，而不是每次点击按钮重新连接。之所以不引入官方 SDK，是因为本项目只需要 3.1.1 的一个子集，而「零第三方依赖」能让 `go.mod` 只有 `module` 与 `go` 两行，交叉编译与包体积都更可控。
+
+鉴权同理：只需要「口令 + 长期 Token」两种凭据与一个内存会话表，引入完整 Web 框架的 session/CSRF 体系反而更重。详见第 13 节。
 
 前端原则是 **Tailwind 负责 90% UI，Reka UI 只负责难以正确手写的交互组件**。例如 Card、Button、Badge、Input 都自己写 Tailwind class；只有确认框、Select、Dropdown、Tooltip 等使用 Reka。这样不会把完整 UI 框架塞进 bundle。
 
@@ -463,6 +466,13 @@ API 保持很小：
 
 | API                                 | 用途                           |
 | ----------------------------------- | ---------------------------- |
+| `GET /api/v1/health`                | 服务健康检查，唯一免鉴权接口               |
+| `POST /api/v1/session/login`        | 口令换会话凭据                      |
+| `GET /api/v1/session/me`            | 当前凭据身份与待改口令标记                |
+| `POST /api/v1/session/password`     | 修改口令（清空全部会话并换发新凭据）           |
+| `POST /api/v1/session/logout`       | 注销当前会话凭据                     |
+| `POST /api/v1/session/handoff`      | 仅回环可调，签发一次性交接码           |
+| `POST /api/v1/session/redeem`       | 交接码换会话凭据，要求同源                |
 | `GET /api/v1/dashboard`             | 当前所有 Dashboard Entry + State |
 | `GET /api/v1/registry`              | 获取注册信息                       |
 | `PUT /api/v1/registry/{id}`         | 注册或更新 Source/Action          |
@@ -470,7 +480,8 @@ API 保持很小：
 | `POST /api/v1/actions/{id}/run`     | 执行动作                         |
 | `POST /api/v1/sources/{id}/refresh` | 手动刷新信息源                      |
 | `GET /api/v1/events`                | SSE 实时更新                     |
-| `GET /api/v1/health`                | 服务健康检查                       |
+
+除 `health` 与 `login` / `redeem` 外，所有接口都需要凭据：外部程序用 `Authorization: Bearer <API Token>`，浏览器用会话凭据。SSE 无法自定义请求头，因此事件流允许用 `?token=` 查询参数传递凭据。
 
 外部程序注册时推荐使用：
 
@@ -568,7 +579,8 @@ data: {...}
 /etc/owdash/
 ├── config.json
 ├── registry.json
-└── secrets.json
+├── secrets.json          口令散列 + API Token（mode 0600）
+└── tls-self-signed.crt   TLS 启用且未自带证书时自动生成
 
 /tmp/owdash/
 └── runtime
@@ -576,7 +588,7 @@ data: {...}
 
 `registry.json` 只有注册、修改、删除时才写入，因此不会因为每 5 秒读取一次温度而磨损 flash。
 
-Runtime State 全部放内存。
+登录会话、运行状态全部放内存，重启即丢。
 
 配置更新采用：
 
@@ -596,24 +608,117 @@ Secrets 和 Registry 分离，API 返回 Registry 时绝不返回 secret 原值�
 
 ## 13. 安全模型
 
-服务默认只应该暴露在 LAN，不配置 WAN firewall rule。
+面板可能控制真实设备甚至执行系统命令，而 OpenWrt 设备常被挂到公网做端口映射，因此安全模型按 **“可能暴露在公网”** 设计，而不是默认“只在内网”。服务仍然不主动开 WAN firewall rule，暴露与否由使用者决定；但一旦暴露，凭据与响应头都已有兜底。
 
-因为 Action 可能控制实际设备甚至调用系统命令，所以 API 默认启用随机 Bearer Token：
+### 双凭据
 
-```http
-Authorization: Bearer <token>
+使用两套互不干扰的凭据，各自服务一类调用方：
+
+| 凭据 | 形态 | 生命周期 | 调用方 |
+| --- | --- | --- | --- |
+| **登录口令** | 用户记忆的字符串 | 长期，可随时改 | 人在浏览器里登录 |
+| **API Token** | 43 字符随机串 | 长期，落盘或取自环境变量 | 脚本、设备本地、自动化 |
+
+登录口令经 **PBKDF2-HMAC-SHA256（210000 轮 + 16 字节随机盐）** 派生后存储，`secrets.json` 里只有算法、轮数、盐与散列，**没有明文**：
+
+```json
+{
+  "password": {
+    "algo": "pbkdf2-sha256",
+    "iterations": 210000,
+    "salt": "…",
+    "hash": "…"
+  },
+  "must_change_password": true,
+  "api_token": "…"
+}
 ```
 
-Token 第一次启动生成并存储：
+首次启动写入默认口令 `admin` 并置 `must_change_password`。**在口令被改掉之前**：
+
+- 只有私网（RFC1918）与回环来源能发起登录，公网来源一律拒绝；
+- 换发的会话凭据只能调用 `me` / `password` / `logout`，其余 API 全部返回受限错误。
+
+这样默认口令即使被公网扫描器扫到也无法利用，而设备主人在 LAN 内可以正常完成首改。
+
+### 会话
+
+口令校验通过后换发**短期会话凭据**：
 
 ```text
-/etc/owdash/secrets.json
-mode 0600
+POST /api/v1/session/login   { password }  →  { token, must_change_password, … }
 ```
 
-相比账号密码系统，这种设计不需要数据库、bcrypt session、cookie/CSRF 等额外体系。
+- 43 字符随机串，默认 **TTL 12 小时**（`auth.session_ttl_minutes`）；
+- **只驻内存**，进程重启即全部失效，因此不写闪存、也无从落盘窃取；
+- 并发上限 64，超出后淘汰最旧的一条；
+- 改口令成功时**清空全部会话**，并给发起改密的浏览器换发新凭据。
+
+浏览器端凭据默认写 `sessionStorage`，只有用户勾选「记住」才落到 `localStorage`。这让「关掉标签页即登出」成为默认行为。
+
+### 防爆破
+
+单靠口令长度不足以对抗公网扫描，因此登录接口叠加两层节流：
+
+```text
+每来源：失败 N 次（默认 5）→ 锁定 15 分钟
+                              ↓ 继续失败
+                        翻倍 → 30 → 60 分钟（上限 1 小时）
+                        成功登录即清零
+
+全局：50 次失败 / 分钟 → 所有来源一起拒绝
+```
+
+关键设计：**来源判定只取 TCP 对端地址，刻意忽略 `X-Forwarded-For`**。否则攻击者只要每请求换一个伪造头，就能把「每来源」节流稀释成无效。代价是前置反向代理时所有请求看起来同源，此时应改用全局限流参数而非放开信任头。
+
+锁定时长也**不落盘**，进程重启即重置——避免攻击者靠重启服务来固化自己的锁，也避免合法用户被持久性锁死。
+
+### 响应头与传输
+
+面板按静态资源站点 + JSON API 的形态加固：
+
+| 响应头 | 取值 | 目的 |
+| --- | --- | --- |
+| `Content-Security-Policy` | `default-src 'self'`；`script-src 'self'`；`object-src 'none'`；`frame-ancestors` 放行同源与 `self` | 杜绝 XSS 与点击劫持，同时允许被 LuCI 内嵌 |
+| `X-Content-Type-Options` | `nosniff` | 防止 MIME 嗅探导致的脚本执行 |
+| `Referrer-Policy` | `no-referrer` | 避免把面板地址泄漏给外部站点 |
+| `Permissions-Policy` | 关闭摄像头/麦克风/定位等 | 面板不需要任何设备能力 |
+| `Cache-Control` | `/api/` 一律 `no-store` | 凭据与状态不进磁盘缓存 |
+| `Strict-Transport-Security` | **仅在 TLS 下** | 不在明文部署上下发，避免把用户锁在无法访问的 HTTPS 上 |
+
+CSP 的 `script-src 'self'` 意味着**页面不能有内联脚本**，所以主题初始化这类首帧前必须执行的逻辑单独放 `public/theme-init.js`，用外链引入。
+
+TLS 可选但对公网暴露是强建议：
+
+```text
+自带证书：tls.cert_file / tls.key_file
+自动自签：ECDSA P-256，10 年有效，落盘 data_dir，重启复用
+明文跳转：tls.redirect_listen 额外监听，308 永久重定向到 HTTPS
+```
+
+启动日志会打印证书 SHA-256 指纹，便于人工核对。
+
+### 一跳交接（LuCI）
+
+LuCI 薄壳不该让用户再输一次口令，也不该把长期 Token 塞进 URL。因此引入**一次性交接码**：
+
+```text
+LuCI 前端 → rpcd /wrtdeck.handoff
+              ↓ 仅回环地址可调用
+          POST /api/v1/session/handoff  →  { code }
+              ↓ 交给浏览器（URL 或 postMessage）
+          POST /api/v1/session/redeem   →  { token }   （要求同源）
+
+code：单次使用、60 秒过期、用后即焚
+```
+
+交接码与 Token 的本质区别是**它只能换一次、一分钟就死**，即使泄漏到浏览器历史或 Referer 也无长期价值。接口只接受回环来源，因此公网无法自行签发。
+
+### 其余边界
 
 `Exec` 默认关闭；HTTP/TCP/UDP/MQTT 默认允许；HTTP Response、TCP Response、API Body 全部设置大小上限；所有网络调用必须设置 deadline。
+
+审计日志统一带 `[auth]` 前缀，记录**来源与结果**（成功/失败/锁定/改密），**绝不写入口令、Token 或交接码**，避免日志本身成为凭据泄漏渠道。
 
 ---
 
@@ -627,7 +732,17 @@ owdash/
 │
 ├── internal/
 │   ├── api/
+│   │   ├── server.go
+│   │   ├── middleware.go      鉴权、安全响应头
+│   │   ├── session.go         登录、改密、交接
+│   │   ├── session_store.go   内存会话表
+│   │   ├── throttle.go        登录节流与锁定
+│   │   └── sse.go
+│   ├── certs/                 TLS 证书准备（自带 / 自签）
 │   ├── config/
+│   │   ├── config.go
+│   │   ├── secrets.go         Token 与口令落盘
+│   │   └── password.go        PBKDF2 散列与强度校验
 │   ├── registry/
 │   ├── engine/
 │   │   ├── executor.go
@@ -647,13 +762,24 @@ owdash/
 │
 ├── web/
 │   ├── src/
+│   │   ├── lib/
+│   │   │   ├── auth.ts        登录状态机
+│   │   │   ├── token.ts       凭据存储
+│   │   │   ├── handoff.ts     一次性交接
+│   │   │   └── theme.ts
+│   │   └── views/
+│   │       └── LoginView.vue
+│   ├── public/
+│   │   └── theme-init.js      CSP 要求脚本外置
 │   ├── package.json
 │   ├── pnpm-lock.yaml
 │   └── vite.config.ts
 │
 ├── packaging/
-│   └── openwrt/
+│   ├── openwrt/               procd 脚本 + apk / ipk 控制文件
+│   └── luci/                  luci-app-wrtdeck 薄壳（rpcd + 菜单 + 视图）
 │
+├── scripts/                   构建、打包与校验脚本（兼容 macOS bash 3.2）
 ├── Makefile
 └── go.mod
 ```

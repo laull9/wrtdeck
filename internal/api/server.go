@@ -13,19 +13,22 @@ import (
 
 // Server 汇总 API 层需要的全部依赖
 type Server struct {
-	cfg     *config.Config
-	store   *registry.Store
-	states  *state.Store
-	hub     *state.Hub
-	history *state.History
-	pool    *transport.MQTTPool
-	exec    *engine.Executor
-	sched   *engine.Scheduler
-	secrets *config.Secrets
-	webui   http.Handler
-	version string
-	dev     bool
-	started time.Time
+	cfg      *config.Config
+	store    *registry.Store
+	states   *state.Store
+	hub      *state.Hub
+	history  *state.History
+	pool     *transport.MQTTPool
+	exec     *engine.Executor
+	sched    *engine.Scheduler
+	secrets  *config.Secrets
+	handoffs *handoff_store
+	sessions *session_store
+	logins   *login_throttle
+	webui    http.Handler
+	version  string
+	dev      bool
+	started  time.Time
 }
 
 // NewServer 创建 API 服务
@@ -36,19 +39,22 @@ func NewServer(cfg *config.Config, store *registry.Store, states *state.Store, h
 		history = state.NewHistory(0)
 	}
 	return &Server{
-		cfg:     cfg,
-		store:   store,
-		states:  states,
-		hub:     hub,
-		history: history,
-		pool:    pool,
-		exec:    exec,
-		sched:   sched,
-		secrets: secrets,
-		webui:   webui,
-		version: version,
-		dev:     dev,
-		started: time.Now(),
+		cfg:      cfg,
+		store:    store,
+		states:   states,
+		hub:      hub,
+		history:  history,
+		pool:     pool,
+		exec:     exec,
+		sched:    sched,
+		secrets:  secrets,
+		handoffs: new_handoff_store(),
+		sessions: new_session_store(cfg.Auth.SessionTTL()),
+		logins:   new_login_throttle(cfg.Auth.MaxAttempts(), cfg.Auth.Lockout()),
+		webui:    webui,
+		version:  version,
+		dev:      dev,
+		started:  time.Now(),
 	}
 }
 
@@ -66,23 +72,37 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/sources/{id}/history", s.handle_source_history)
 	mux.HandleFunc("GET /api/v1/events", s.handle_events)
 
+	// 登录与会话：口令换会话凭据、查询凭据状态、改口令、登出
+	mux.HandleFunc("POST /api/v1/session/login", s.handle_session_login)
+	mux.HandleFunc("GET /api/v1/session/me", s.handle_session_me)
+	mux.HandleFunc("POST /api/v1/session/password", s.handle_session_password)
+	mux.HandleFunc("POST /api/v1/session/logout", s.handle_session_logout)
+	// 设备本机（LuCI 薄壳）申请一次性登录码，浏览器用它换会话凭据
+	mux.HandleFunc("POST /api/v1/session/handoff", s.handle_session_handoff)
+	mux.HandleFunc("POST /api/v1/session/redeem", s.handle_session_redeem)
+
 	mux.Handle("/", s.webui)
 
 	return middleware(mux,
 		with_logging,
+		s.with_security_headers,
 		func(next http.Handler) http.Handler { return with_cors(s.dev, next) },
 		func(next http.Handler) http.Handler { return with_limit(s.cfg.Limits.MaxRequestBytes, next) },
 		s.with_auth,
 	)
 }
 
-// server_info 是给前端展示的服务元信息
+// server_info 是给前端展示的服务元信息。
+// 这里不含任何凭据，只暴露前端决定「显示什么」所需的状态。
 type server_info struct {
 	Version     string    `json:"version"`
 	UptimeS     float64   `json:"uptime_s"`
 	StartedAt   time.Time `json:"started_at"`
 	Dev         bool      `json:"dev"`
 	AuthOff     bool      `json:"auth_disabled"`
+	MustChange  bool      `json:"must_change_password"`
+	SessionTTLM int       `json:"session_ttl_minutes"`
+	TLS         bool      `json:"tls_enabled"`
 	Sources     int       `json:"sources"`
 	Actions     int       `json:"actions"`
 	Subscribers int       `json:"subscribers"`
@@ -162,6 +182,9 @@ func (s *Server) info() server_info {
 		StartedAt:   s.started,
 		Dev:         s.dev,
 		AuthOff:     s.cfg.Auth.Disabled,
+		MustChange:  s.secrets.MustChange(),
+		SessionTTLM: int(s.cfg.Auth.SessionTTL().Minutes()),
+		TLS:         s.cfg.TLS.Enabled,
 		Sources:     sources,
 		Actions:     actions,
 		Subscribers: s.hub.Subscribers(),

@@ -2,48 +2,28 @@ import type {
   ActionFinishedPayload,
   DashboardResponse,
   Entry,
+  HealthResponse,
   HelloPayload,
   RegistryChangedPayload,
   RunResponse,
+  SessionResponse,
   SourceState,
 } from './types'
+import { get_token } from './lib/token'
 
-// Token 存放在 localStorage，避免每次刷新都要重新输入
-const token_key = 'owdash.api_token'
-
-// 读取本地保存的 Token
-export function get_token(): string {
-  try {
-    return localStorage.getItem(token_key) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-// 保存或清除本地 Token
-export function set_token(value: string): void {
-  try {
-    if (value) {
-      localStorage.setItem(token_key, value)
-    } else {
-      localStorage.removeItem(token_key)
-    }
-  } catch {
-    /* 隐私模式下忽略写入失败 */
-  }
-}
-
-// ApiError 携带 HTTP 状态码，便于区分鉴权失败
+// ApiError 携带 HTTP 状态码与后端错误码，便于区分鉴权失败、登录限速与需要改口令
 export class ApiError extends Error {
   status: number
+  code: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, code: string, message: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
-// request 是统一的接口调用封装，自动附带 Token 并解析错误体
+// request 是统一的接口调用封装，自动附带凭据并解析错误体
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = get_token()
@@ -67,14 +47,42 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
   if (!response.ok) {
-    const detail = (payload as { error?: { message?: string } } | null)?.error?.message
-    throw new ApiError(response.status, detail ?? `请求失败（HTTP ${response.status}）`)
+    const detail = (payload as { error?: { message?: string; code?: string } } | null)?.error
+    throw new ApiError(
+      response.status,
+      detail?.code ?? '',
+      detail?.message ?? `请求失败（HTTP ${response.status}）`,
+    )
   }
   return payload as T
 }
 
 // api 汇总后端全部接口
 export const api = {
+  // 健康检查，不需要鉴权，前端启动时用它判断鉴权状态与是否需要改初始口令
+  health: () => request<HealthResponse>('/health'),
+  // 口令登录，成功返回会话凭据
+  login: (password: string, remember: boolean) =>
+    request<SessionResponse>('/session/login', {
+      method: 'POST',
+      body: JSON.stringify({ password, remember }),
+    }),
+  // 查询当前凭据的状态；未登录时返回 401，前端用它确认本地凭据是否还有效
+  session_me: () => request<SessionResponse>('/session/me'),
+  // 修改口令；口令变更后服务端会作废全部旧会话，因此可能返回一张新凭据
+  change_password: (current_password: string, new_password: string) =>
+    request<SessionResponse>('/session/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  // 登出，作废服务端会话
+  logout: () => request<{ ok: boolean }>('/session/logout', { method: 'POST', body: '{}' }),
+  // 用一次性登录码换取会话凭据，登录码用后即废
+  redeem_code: (code: string) =>
+    request<SessionResponse>('/session/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
   // 获取 Dashboard 首屏数据
   dashboard: () => request<DashboardResponse>('/dashboard'),
   // 获取注册表

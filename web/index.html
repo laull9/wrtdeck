@@ -2,31 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <!-- 移动端浏览器地址栏配色，由下面的内联脚本与 src/lib/theme.ts 同步 -->
+    <!-- 移动端浏览器地址栏配色，由 theme-init.js 与 src/lib/theme.ts 同步 -->
     <meta name="theme-color" content="#f4f5f7" />
-    <script>
-      // 主题必须在首帧前定下来，否则刷新时会先闪一下另一套配色。
-      // 键名与取值逻辑必须与 src/lib/theme.ts 保持一致。
-      ;(function () {
-        var dark = false
-        try {
-          var saved = window.localStorage.getItem('owdash.theme')
-          dark =
-            saved === 'dark' ||
-            (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-        } catch (err) {
-          /* 隐私模式下 localStorage 不可用，退回跟随系统 */
-          dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        }
-        if (dark) {
-          document.documentElement.classList.add('dark')
-        }
-        var meta = document.querySelector('meta[name="theme-color"]')
-        if (meta) {
-          meta.setAttribute('content', dark ? '#08090c' : '#f4f5f7')
-        }
-      })()
-    </script>
+    <!--
+      首帧主题引导必须是外部同步脚本：服务端下发的是 script-src 'self' 的 CSP，
+      内联脚本会被浏览器拦掉，页面就会先闪一下另一套配色。
+    -->
+    <script src="/theme-init.js"></script>
     <!-- 站点图标由 scripts/make-icons.py 从 assets/WrtDeck.png 生成，改图标请改母版后重新生成 -->
     <!-- favicon.ico 已内含 16x16 / 32x32 / 48x48，无需再单独声明小尺寸 PNG -->
     <link rel="icon" href="/favicon.ico" sizes="any" />

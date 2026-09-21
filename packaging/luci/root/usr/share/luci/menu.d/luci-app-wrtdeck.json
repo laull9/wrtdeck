@@ -1,0 +1,15 @@
+{
+	"admin/services/wrtdeck": {
+		"title": "WrtDeck",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "wrtdeck/panel"
+		},
+		"depends": {
+			"acl": {
+				"luci-app-wrtdeck": [ "read" ]
+			}
+		}
+	}
+}

@@ -1,0 +1,195 @@
+#!/bin/sh
+# WrtDeck 的 rpcd 后端：给 LuCI 薄壳提供状态查询、一次性登录码与服务启停。
+#
+# 它由 rpcd 以 root 身份调用，因此能读到 /etc/owdash/secrets.json 这一层凭据；
+# 谁有权调用由 /usr/share/rpcd/acl.d/luci-app-wrtdeck.json 限定（默认只有 root 登录能拿到）。
+#
+# 交接设计：浏览器的地址栏与历史里不放任何长期凭据。
+# rpcd 在设备内部用 API Token 换一个 60 秒有效、只能兑一次的登录码，
+# 由面板前端收到父窗口消息后兑换成会话凭据。
+# 拿不到登录码时不做任何降级：面板会退回口令登录页，这比把长期凭据交给浏览器安全。
+
+. /usr/share/libubox/jshn.sh
+
+PROG=/usr/bin/owdash
+CONF_DIR=/etc/owdash
+CONF="$CONF_DIR/config.json"
+# 只在设备的环回地址上申请登录码，避免依赖网卡地址推导
+API_BASE="http://127.0.0.1"
+
+# 取出面板监听端口，配置缺失或解析失败时按默认 8080
+panel_port() {
+	_port="$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"[^"]*:\([0-9][0-9]*\)".*/\1/p' "$CONF" 2>/dev/null | head -1)"
+	[ -n "$_port" ] || _port=8080
+	printf '%s' "$_port"
+}
+
+# 从 JSON 里取一个字符串字段，够用即可，不强依赖 jsonfilter
+json_pick() {
+	printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+}
+
+# 服务是否在运行
+service_running() {
+	pgrep -f "$PROG" >/dev/null 2>&1
+}
+
+# 服务版本
+service_version() {
+	"$PROG" -version 2>/dev/null | head -1
+}
+
+# 当前 API Token，只有 root 能读到
+api_token() {
+	[ -f "$CONF_DIR/secrets.json" ] || return 1
+	"$PROG" -config "$CONF" -print-token 2>/dev/null | head -1
+}
+
+# 申请一次性登录码：依次尝试设备上常见的几种 HTTP 客户端，全部失败时返回非零
+apply_code() {
+	_token="$1"
+	_port="$2"
+	_url="$API_BASE:$_port/api/v1/session/handoff"
+	_body='{}'
+
+	if command -v curl >/dev/null 2>&1; then
+		_response="$(curl -sS -m 5 -X POST \
+			-H "Authorization: Bearer $_token" \
+			-H 'Content-Type: application/json' \
+			-d "$_body" "$_url" 2>/dev/null)" && [ -n "$_response" ] && {
+			printf '%s' "$_response"
+			return 0
+		}
+	fi
+
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		_response="$(uclient-fetch -q -O - --timeout=5 \
+			--header="Authorization: Bearer $_token" \
+			--header='Content-Type: application/json' \
+			--post-data="$_body" "$_url" 2>/dev/null)" && [ -n "$_response" ] && {
+			printf '%s' "$_response"
+			return 0
+		}
+	fi
+
+	if command -v wget >/dev/null 2>&1; then
+		_response="$(wget -q -O - -T 5 \
+			--header="Authorization: Bearer $_token" \
+			--header='Content-Type: application/json' \
+			--post-data="$_body" "$_url" 2>/dev/null)" && [ -n "$_response" ] && {
+			printf '%s' "$_response"
+			return 0
+		}
+	fi
+
+	return 1
+}
+
+# status：面板是否在跑、监听端口、版本，以及是否还没改初始口令
+do_status() {
+	_port="$(panel_port)"
+	_running=false
+	service_running && _running=true
+
+	# 初始口令是公开信息，LuCI 里应当主动提醒，而不是等用户从面板里自己发现
+	_pending=false
+	if [ -f "$CONF_DIR/secrets.json" ] &&
+		grep -q '"must_change_password"[[:space:]]*:[[:space:]]*true' "$CONF_DIR/secrets.json"; then
+		_pending=true
+	fi
+
+	json_init
+	json_add_boolean "running" "$_running"
+	json_add_boolean "installed" "$([ -x "$PROG" ] && echo 1 || echo 0)"
+	json_add_string "port" "$_port"
+	json_add_string "version" "$(service_version)"
+	json_add_boolean "token_ready" "$([ -f "$CONF_DIR/secrets.json" ] && echo 1 || echo 0)"
+	json_add_boolean "password_pending" "$_pending"
+	json_dump
+}
+
+# handoff：给出进入面板所需的凭据。只发一次性登录码，长期凭据不出设备进程。
+do_handoff() {
+	_port="$(panel_port)"
+	_code=""
+
+	# 面板可能在开机自启前就被点开，这里不因为没进程就放弃取码
+	_long_token="$(api_token)"
+	if [ -n "$_long_token" ]; then
+		_response="$(apply_code "$_long_token" "$_port" || true)"
+		_code="$(json_pick "$_response" code)"
+	fi
+
+	# 没拿到码时前端会落到口令登录页，因此这里要如实告诉它原因
+	_reason=""
+	if [ -z "$_long_token" ]; then
+		_reason="读不到 API Token，面板可能还没启动过"
+	elif [ -z "$_code" ]; then
+		_reason="设备上没有可用的 HTTP 客户端（curl / uclient-fetch / wget），无法申请登录码"
+	fi
+
+	json_init
+	json_add_string "port" "$_port"
+	json_add_string "code" "$_code"
+	json_add_string "reason" "$_reason"
+	json_dump
+}
+
+# control：启停服务
+do_control() {
+	_action="$(json_pick "$1" action)"
+	case "$_action" in
+		start|stop|restart) ;;
+		*)
+			json_init
+			json_add_boolean "ok" 0
+			json_add_string "message" "不支持的 action：$_action"
+			json_dump
+			return 0
+			;;
+	esac
+
+	if /etc/init.d/owdash "$_action" >/dev/null 2>&1; then
+		json_init
+		json_add_boolean "ok" 1
+		json_add_string "message" "owdash $_action 已执行"
+		json_dump
+	else
+		json_init
+		json_add_boolean "ok" 0
+		json_add_string "message" "owdash $_action 执行失败，请看 logread -e owdash"
+		json_dump
+	fi
+}
+
+case "$1" in
+	list)
+		json_init
+		json_add_object "status"
+		json_close_object
+		json_add_object "handoff"
+		json_close_object
+		json_add_object "control"
+		json_add_string "action" "string"
+		json_close_object
+		json_dump
+		;;
+	call)
+		case "$2" in
+			status)
+				read -r _args
+				do_status
+				;;
+			handoff)
+				read -r _args
+				do_handoff
+				;;
+			control)
+				read -r _args
+				do_control "$_args"
+				;;
+		esac
+		;;
+esac
+
+exit 0

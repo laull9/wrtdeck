@@ -1,0 +1,10 @@
+#!/bin/sh
+# apk 升级后：保持用户当前的启停状态，只重启一次让新二进制生效
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# 用户手动 disable 过就不要擅自拉起来，升级不应改变人为选择的状态
+if ls /etc/rc.d/S*owdash >/dev/null 2>&1; then
+	/etc/init.d/owdash restart
+fi
+
+exit 0

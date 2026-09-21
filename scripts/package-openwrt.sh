@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# 把交叉编译产物与 procd 脚本打包成 OpenWrt 可安装的 ipk
+# 把交叉编译产物与 procd 脚本打包成 OpenWrt 包。
 #
-# ipk 本体就是 ar 归档（debian-binary + control.tar.gz + data.tar.gz），
-# 因此不依赖 OpenWrt SDK，用系统自带的 ar/tar 就能在开发机上产出真机可装的包。
-# 需要走 SDK 内构建时用 packaging/openwrt/Makefile。
+# 默认产出 apk：OpenWrt 25.12 起 apk-tools v3 取代 opkg，官方仓库索引也已改成 packages.adb。
+# ipk 仍然保留，供 24.10 及更早版本使用；两种格式共用同一份 payload，
+# 因此不会出现「apk 里有的文件 ipk 里没有」这类偏差。
 #
 # 用法：
-#   sh scripts/package-openwrt.sh                      # 默认 GOARCH=arm64
+#   sh scripts/package-openwrt.sh                      # 默认只出 apk
+#   PKG_FORMAT=ipk sh scripts/package-openwrt.sh       # 只出 ipk
+#   PKG_FORMAT=both sh scripts/package-openwrt.sh      # 两种都出
 #   GOARCH=arm64 PKG_ARCH=aarch64_cortex-a53 sh scripts/package-openwrt.sh
 #   VERSION=1.2.0 PKG_RELEASE=2 sh scripts/package-openwrt.sh
+#   APK_SIGN=0 sh scripts/package-openwrt.sh           # 出未签名 apk，安装需 --allow-untrusted
 
 set -eu
 
 . "$(dirname "$0")/_common.sh"
+. "$(dirname "$0")/pack.sh"
 
 root="$(project_root)"
 go_bin="$(find_go)"
 version="${VERSION:-1.0.0}"
-release="${PKG_RELEASE:-1}"
 goarch="${GOARCH:-arm64}"
+format="${PKG_FORMAT:-apk}"
 
 # Go 目标平台与 OpenWrt 架构名的对应，PKG_ARCH 显式给出时不走这张表
 if [ -z "${PKG_ARCH:-}" ]; then
@@ -34,18 +38,6 @@ if [ -z "${PKG_ARCH:-}" ]; then
       ;;
   esac
 fi
-
-# 打包目录为 tar.gz，属主统一写成 root:root，
-# 否则 macOS 上 gid 0 会解析成 wheel，设备端解包后属主错误。
-tar_gz() {
-  _src="$1"
-  _out="$2"
-  if tar --version 2>/dev/null | grep -qi 'gnu'; then
-    ( cd "$_src" && tar --owner=root:0 --group=root:0 -czf "$_out" . )
-  else
-    ( cd "$_src" && tar --uid 0 --gid 0 --uname root --gname root -czf "$_out" . )
-  fi
-}
 
 build_web package
 
@@ -66,58 +58,50 @@ if ! file "$bin" | grep -q 'statically linked'; then
   exit 1
 fi
 
+# ── payload：apk 与 ipk 共用这一份文件树 ───────────────────────────────────
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# ── 数据部分：/usr/bin + /etc/init.d + /etc/owdash ──────────────────────────
-pkgdir="$work/data"
-mkdir -p "$pkgdir/usr/bin" "$pkgdir/etc/init.d" "$pkgdir/etc/owdash"
-install -m 0755 "$bin" "$pkgdir/usr/bin/owdash"
-install -m 0755 "$root/packaging/openwrt/owdash.init" "$pkgdir/etc/init.d/owdash"
+PKG_ROOT="$work/rootfs"
+mkdir -p "$PKG_ROOT/usr/bin" "$PKG_ROOT/etc/init.d" "$PKG_ROOT/etc/owdash"
+install -m 0755 "$bin" "$PKG_ROOT/usr/bin/owdash"
+install -m 0755 "$root/packaging/openwrt/owdash.init" "$PKG_ROOT/etc/init.d/owdash"
+# 配置文件在设备上由 apk 的 protected_paths 与 ipk 的 conffiles 保护，升级都不覆盖用户改动
 install -m 0644 "$root/packaging/openwrt/files/etc/owdash/config.json" \
-  "$pkgdir/etc/owdash/config.json"
+  "$PKG_ROOT/etc/owdash/config.json"
 
-# ── 控制部分：元数据与安装钩子 ─────────────────────────────────────────────
-ctrldir="$work/control"
-mkdir -p "$ctrldir"
-cp "$root/packaging/openwrt/control/conffiles" "$ctrldir/conffiles"
-install -m 0755 "$root/packaging/openwrt/control/postinst" "$ctrldir/postinst"
-install -m 0755 "$root/packaging/openwrt/control/prerm" "$ctrldir/prerm"
+# apk 的安装钩子：脚本名对应 abuild 约定的 .post-install 等条目
+PKG_APK_SCRIPTS="post-install=$root/packaging/openwrt/apk/post-install"
+PKG_APK_SCRIPTS="$PKG_APK_SCRIPTS post-upgrade=$root/packaging/openwrt/apk/post-upgrade"
+PKG_APK_SCRIPTS="$PKG_APK_SCRIPTS pre-deinstall=$root/packaging/openwrt/apk/pre-deinstall"
 
-size_kb="$(du -sk "$pkgdir" | awk '{ print $1 }')"
-cat > "$ctrldir/control" <<EOF
-Package: owdash
-Version: ${version}-${release}
-Depends: ca-bundle
-Section: utils
-Priority: optional
-Maintainer: WrtDeck
-Architecture: ${PKG_ARCH}
-Installed-Size: ${size_kb}
-Description: WrtDeck 轻量设备控制面板
- 通过注册表把 HTTP/TCP/UDP/MQTT 设备状态与控制命令动态变成面板卡片与操作按钮。
- 前端资源已通过 embed.FS 编入二进制，运行时仅依赖设备自身，无额外运行时依赖。
-EOF
+# 元数据：两种格式共用，改一处即可
+PKG_NAME=owdash
+PKG_VERSION="$version"
+PKG_RELEASE="${PKG_RELEASE:-1}"
+PKG_DESC="WrtDeck 轻量设备控制面板"
+PKG_DESC_LONG="通过注册表把 HTTP/TCP/UDP/MQTT 设备状态与控制命令动态变成面板卡片与操作按钮。
+前端资源已通过 embed.FS 编入二进制，运行时仅依赖设备自身，无额外运行时依赖。"
+PKG_DEPS="ca-bundle"
+PKG_LICENSE="MIT"
+PKG_IPK_HOOKS="$root/packaging/openwrt/control"
+PKG_IPK_CONFFILES="/etc/owdash/config.json"
 
-printf '2.0\n' > "$work/debian-binary"
-tar_gz "$ctrldir" "$work/control.tar.gz"
-tar_gz "$pkgdir" "$work/data.tar.gz"
+case "$format" in
+  apk)
+    pack_apk "$root/dist/${PKG_NAME}-${PKG_VERSION}-r${PKG_RELEASE}.apk"
+    ;;
+  ipk)
+    pack_ipk "$root/dist/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${PKG_ARCH}.ipk"
+    ;;
+  both)
+    pack_apk "$root/dist/${PKG_NAME}-${PKG_VERSION}-r${PKG_RELEASE}.apk"
+    pack_ipk "$root/dist/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${PKG_ARCH}.ipk"
+    ;;
+  *)
+    echo "未知的 PKG_FORMAT=$format，可选 apk / ipk / both" >&2
+    exit 1
+    ;;
+esac
 
-ipk="$root/dist/owdash_${version}-${release}_${PKG_ARCH}.ipk"
-rm -f "$ipk"
-# BSD ar 默认会往归档里塞 __.SYMDEF 符号表，-S 可关掉；
-# 个别平台不认 -S，退回默认行为后再手动摘掉符号表。
-if ! ( cd "$work" && ar rcS "$ipk" debian-binary control.tar.gz data.tar.gz ) 2>/dev/null; then
-  ( cd "$work" && ar rc "$ipk" debian-binary control.tar.gz data.tar.gz )
-  ( cd "$work" && ar d "$ipk" __.SYMDEF ) 2>/dev/null || true
-fi
-
-members="$(ar t "$ipk" | tr '\n' ' ' | sed 's/ *$//')"
-if [ "$members" != 'debian-binary control.tar.gz data.tar.gz' ]; then
-  echo "ipk 成员异常：$members" >&2
-  exit 1
-fi
-
-log_info package "ipk 已生成 $ipk"
-log_info package "结构 $members"
-report_artifact package "$ipk"
+log_info package "打包完成（格式 $format，架构 $PKG_ARCH）"

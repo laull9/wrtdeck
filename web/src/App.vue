@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, ApiError, get_token, open_events } from './api'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { api, ApiError, open_events } from './api'
 import type { DashboardResponse, SourceState } from './types'
+import { auth, forget, logout, require_password_change } from './lib/auth'
 import DashboardView from './views/DashboardView.vue'
+import LoginView from './views/LoginView.vue'
 import RegistryView from './views/RegistryView.vue'
-import TokenDialog from './components/TokenDialog.vue'
+import PasswordDialog from './components/PasswordDialog.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
 import ToastStack from './components/ToastStack.vue'
 // 品牌标识，由 scripts/make-icons.py 从 assets/WrtDeck.png 生成
@@ -21,10 +23,8 @@ const error = ref('')
 const connected = ref(false)
 // 提示条列表
 const toasts = ref<{ id: number; text: string; tone: 'ok' | 'error' }[]>([])
-// 是否需要显示 Token 输入框
-const token_open = ref(false)
-// 是否有本地 Token，决定是否显示鉴权入口
-const has_token = ref(get_token() !== '')
+// 主动打开改口令对话框
+const password_open = ref(false)
 // 顶部页签定义
 const tabs = [
   { key: 'dashboard', label: '面板' },
@@ -36,8 +36,13 @@ let close_events: (() => void) | null = null
 // 提示条自增序号
 let toast_seq = 0
 
-// 是否处于"未鉴权"状态，用于引导填写 Token
-const need_token = computed(() => error.value.includes('Token'))
+// 是否需要渲染业务界面：引导结束、且要么有凭据、要么服务端根本没开鉴权
+const signed_in = computed(() => auth.ready && (auth.token !== '' || auth.open))
+// 强制改口令只在已登录之后生效：改口令本身需要凭据，
+// 未登录时把框弹出来，用户既改不了也点不掉，等于把登录页堵死
+const password_forced = computed(() => auth.must_change && signed_in.value)
+// 是否显示改口令与登出按钮
+const show_session_actions = computed(() => !auth.open && auth.token !== '')
 
 // 拉取 Dashboard 全量数据
 async function load(): Promise<void> {
@@ -47,8 +52,13 @@ async function load(): Promise<void> {
   } catch (err) {
     error.value = err instanceof ApiError ? err.message : String(err)
     if (err instanceof ApiError && err.status === 401) {
-      has_token.value = false
-      token_open.value = true
+      // 凭据过期或已在别处改过口令，退回登录页
+      forget()
+      return
+    }
+    // 服务端要求先改口令时，界面只保留改密框
+    if (err instanceof ApiError && err.code === 'password_change_required') {
+      require_password_change()
     }
   } finally {
     loading.value = false
@@ -100,11 +110,34 @@ function connect(): void {
   })
 }
 
-// Token 保存后重连并刷新数据
-function on_token_saved(): void {
-  has_token.value = get_token() !== ''
-  connect()
-  void load()
+// 登录成功后接管数据加载；仍在初始口令状态时先不拉数据，交给强制改密框
+function on_signed_in(): void {
+  if (auth.must_change) {
+    loading.value = false
+    error.value = ''
+    password_open.value = true
+    return
+  }
+  loading.value = true
+  error.value = ''
+  void load().then(connect)
+}
+
+// 改完口令：服务端已换发新会话，凭据仍是「已登录」，因此这里要显式把数据接上
+function on_password_changed(): void {
+  password_open.value = false
+  notify('口令已更新，其它设备上的登录已失效')
+  on_signed_in()
+}
+
+// 主动登出
+async function sign_out(): Promise<void> {
+  await logout()
+  close_events?.()
+  close_events = null
+  data.value = null
+  connected.value = false
+  page.value = 'dashboard'
 }
 
 // 手动刷新信息源
@@ -117,8 +150,29 @@ async function refresh_source(id: string): Promise<void> {
 }
 
 onMounted(async () => {
+  // 还没登录就先看登录页：初始口令的提示由登录页给出，
+  // 改密框要等拿到凭据之后才能弹（见 password_forced）
+  if (!signed_in.value) {
+    loading.value = false
+    return
+  }
+  // 已登录但仍是初始口令：除改口令外的请求都会被拒，不必先拉数据
+  if (auth.must_change) {
+    loading.value = false
+    password_open.value = true
+    return
+  }
   await load()
   connect()
+})
+
+// 从「未登录」变成「已登录」时接管数据加载。
+// 这里监听的是状态本身而不是 token：改口令会换发新凭据，
+// 按 token 变化判断的话「旧凭据非空、新凭据也非空」会被漏掉。
+watch(signed_in, (now, before) => {
+  if (now && !before) {
+    on_signed_in()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -127,14 +181,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-h-full flex-col">
+  <LoginView v-if="auth.ready && !signed_in" />
+
+  <!-- 初始口令期间不渲染面板外壳：此时除改口令外的请求都会被服务端拒绝，
+       渲染出来只会是一片报错，徒增困惑 -->
+  <div
+    v-else-if="auth.ready && password_forced"
+    class="flex min-h-full items-center justify-center px-5 text-base text-ink-muted"
+  >
+    面板仍在使用初始口令，请先完成口令修改。
+  </div>
+
+  <div v-else-if="auth.ready" class="flex min-h-full flex-col">
     <header class="sticky top-0 z-20 border-b border-line bg-canvas/90 backdrop-blur">
       <div class="mx-auto flex max-w-6xl items-center gap-4 px-5 py-3">
         <div class="flex items-center gap-2.5">
           <img :src="logo_url" alt="WrtDeck" class="h-8 w-8 shrink-0" />
           <div class="flex items-baseline gap-2">
             <span class="text-lg font-semibold tracking-tight text-ink">WrtDeck</span>
-            <span class="readout text-sm text-ink-faint">{{ data?.server.version ?? '—' }}</span>
+            <span class="readout text-sm text-ink-faint">{{ data?.server.version ?? auth.version }}</span>
           </div>
         </div>
 
@@ -167,16 +232,19 @@ onBeforeUnmount(() => {
             {{ data?.server.sources ?? 0 }} 源 / {{ data?.server.actions ?? 0 }} 动作
           </span>
           <button
-            v-if="!data?.server.auth_disabled"
+            v-if="show_session_actions"
             type="button"
             class="btn btn-outline btn-sm"
             :class="{
               'border-amber-500 text-amber-600 dark:border-amber-600 dark:text-amber-400':
-                !has_token,
+                auth.must_change,
             }"
-            @click="token_open = true"
+            @click="password_open = true"
           >
-            {{ has_token ? 'Token' : '设置 Token' }}
+            {{ auth.must_change ? '改初始口令' : '改口令' }}
+          </button>
+          <button v-if="show_session_actions" type="button" class="btn btn-ghost btn-sm" @click="sign_out">
+            退出
           </button>
           <ThemeToggle />
         </div>
@@ -191,10 +259,6 @@ onBeforeUnmount(() => {
         class="rounded-xl border border-rose-200 bg-rose-50 p-6 text-base text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
       >
         <p class="font-medium">{{ error }}</p>
-        <p v-if="need_token" class="mt-2 text-rose-600/80 dark:text-rose-400/80">
-          服务已开启 Bearer Token 鉴权，请点击右上角填入 Token（可在服务端执行
-          <code class="code-chip">owdash -print-token</code> 获取）。
-        </p>
         <button
           type="button"
           class="mt-4 rounded-md border border-rose-300 px-3 py-1.5 text-base text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/40"
@@ -215,9 +279,23 @@ onBeforeUnmount(() => {
       />
 
       <RegistryView v-else-if="page === 'registry'" @notify="notify" @reload="load" />
+
+      <!-- 兜底：既不加载、也没数据、也没报错时给一句话，避免出现整片空白 -->
+      <div v-else class="panel p-6 text-base text-ink-muted">正在准备面板…</div>
     </main>
 
     <ToastStack :items="toasts" />
-    <TokenDialog v-model:open="token_open" @saved="on_token_saved" />
   </div>
+
+  <div v-else class="flex min-h-full items-center justify-center text-base text-ink-muted">
+    正在连接服务…
+  </div>
+
+  <!-- 改口令对话框放在分支之外：登录页与面板里都能打开它 -->
+  <PasswordDialog
+    :open="password_open || password_forced"
+    :forced="password_forced"
+    @update:open="password_open = $event"
+    @done="on_password_changed"
+  />
 </template>
