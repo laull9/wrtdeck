@@ -4,9 +4,12 @@
 
 set -eu
 
-# 项目根目录，基于脚本自身位置推导
+# 项目根目录。source 时算一次并缓存：project_root 早期实现每次都 cd，
+# 调用方一旦先切到子目录就会推导出错误路径，因此改成幂等的纯查询。
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
 project_root() {
-  cd "$(dirname "$0")/.." && pwd
+  printf '%s\n' "$PROJECT_ROOT"
 }
 
 # 定位 go 可执行文件，优先使用 PATH，其次探测常见安装位置
@@ -46,4 +49,24 @@ run_pnpm() {
 # 带前缀的信息输出
 log_info() {
   printf '[%s] %s\n' "$1" "$2"
+}
+
+# 打印产物路径与大小。
+# 不要用 ls 解析列：BSD ls 的日期是两列（2026-09-21 15:31），
+# GNU ls 是三列（Sep 21 15:31），写死 $9 在 macOS 上会取到空字符串。
+report_artifact() {
+  printf '[%s] 产物 %s %s\n' "$1" "$2" "$(du -h "$2" | awk '{ print $1 }')"
+}
+
+# 构建前端并写回 embed 占位文件。
+# Vite 会清空输出目录，而 //go:embed all:dist 要求该目录非空，
+# 因此每次构建后都要放回 .gitkeep，否则空仓库克隆后无法编译。
+build_web() {
+  prefix="${1:-build}"
+  target="$(project_root)"
+  cd "$target/web"
+  log_info "$prefix" "构建前端"
+  run_pnpm install --frozen-lockfile
+  run_pnpm build
+  touch "$target/internal/webui/dist/.gitkeep"
 }

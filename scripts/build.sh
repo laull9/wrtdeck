@@ -9,10 +9,7 @@ root="$(project_root)"
 go_bin="$(find_go)"
 version="${VERSION:-dev}"
 
-cd "$root/web"
-log_info build "构建前端"
-run_pnpm install --frozen-lockfile
-run_pnpm build
+build_web build
 
 cd "$root"
 mkdir -p dist
@@ -23,4 +20,4 @@ log_info build "构建后端（本机平台）"
   -o dist/owdash \
   ./cmd/owdash
 
-ls -lh dist/owdash | awk '{ print "[build] 产物 " $9 " " $5 }'
+report_artifact build dist/owdash

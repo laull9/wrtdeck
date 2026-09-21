@@ -1,0 +1,15 @@
+#!/bin/sh
+# 安装后：首次安装才启用并启动服务，升级时保持用户当前的启停状态
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+if [ ! -f /etc/owdash/.installed ]; then
+	touch /etc/owdash/.installed
+	/etc/init.d/owdash enable
+	/etc/init.d/owdash start
+	echo "WrtDeck 已安装并启动，访问 http://<设备IP>:8080"
+	echo "API Token 可用 '/etc/init.d/owdash token' 查看"
+else
+	/etc/init.d/owdash restart
+fi
+
+exit 0

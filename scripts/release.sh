@@ -10,10 +10,7 @@ go_bin="$(find_go)"
 version="${VERSION:-dev}"
 target_arch="${GOARCH:-arm64}"
 
-cd "$root/web"
-log_info release "构建前端"
-run_pnpm install --frozen-lockfile
-run_pnpm build
+build_web release
 
 cd "$root"
 mkdir -p dist
@@ -24,4 +21,4 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$target_arch" "$go_bin" build \
   -o "dist/owdash-linux-${target_arch}" \
   ./cmd/owdash
 
-ls -lh "dist/owdash-linux-${target_arch}" | awk '{ print "[release] 产物 " $9 " " $5 }'
+report_artifact release "dist/owdash-linux-${target_arch}"

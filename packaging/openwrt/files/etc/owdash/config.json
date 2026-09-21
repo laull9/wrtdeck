@@ -1,0 +1,20 @@
+{
+  "listen": "0.0.0.0:8080",
+  "data_dir": "/etc/owdash",
+  "auth": {},
+  "exec": {
+    "enabled": true
+  },
+  "limits": {
+    "history_limit": 120
+  },
+  "workers": {
+    "source": 4,
+    "action": 4
+  },
+  "mqtt": {
+    "keepalive_seconds": 30,
+    "connect_timeout_ms": 5000,
+    "max_reconnect_delay_ms": 30000
+  }
+}
