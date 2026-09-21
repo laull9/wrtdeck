@@ -128,9 +128,17 @@ jobs:
             wrtdeck-local.rsa.pub
             sha256sums.txt
           )
-          gh release create "$TAG" "${assets[@]}" \
-            --title "WrtDeck $TAG" \
-            --notes-file RELEASE_NOTES.md \
-            --draft=false \
-            --prerelease=false \
-            --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "WrtDeck $TAG" \
+              --notes-file RELEASE_NOTES.md \
+              --draft=false \
+              --prerelease=false
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --title "WrtDeck $TAG" \
+              --notes-file RELEASE_NOTES.md \
+              --draft=false \
+              --prerelease=false
+          fi
