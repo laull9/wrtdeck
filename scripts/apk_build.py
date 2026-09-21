@@ -110,7 +110,9 @@ def build_pkginfo(args, datahash, installed_size):
     ]
     for depend in args.depend:
         lines.append('depend = %s' % depend)
-    lines.append('provides = %s=%s' % (args.name, pkgver))
+    # 包名与版本对 apk 而言本来就是隐含提供的。
+    # 再写一行 provides = 自身名=版本 会让求解器多出一个同名同版本的「能力提供者」，
+    # 与包本身互相冲突（真机上表现为 conflicts: 自己[自己=版本]），因此只写 --provides 补的额外能力。
     for provided in args.provides:
         lines.append('provides = %s' % provided)
     for replaced in args.replaces:

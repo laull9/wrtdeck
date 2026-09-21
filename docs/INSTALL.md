@@ -32,12 +32,21 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 
 ```sh
 # OpenWrt 25.12 及以上（apk）
+apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
 apk add --allow-untrusted ./owdash-1.0.0-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
 opkg install ./owdash_1.0.0-1_aarch64_cortex-a53.ipk
 ```
+
+> **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
+> 不会把同目录下的另一个本地包当作候选。面板包 `owdash` 只以本地文件形式存在，
+> 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
+>
+> ```sh
+> apk add --allow-untrusted ./owdash-1.0.0-r1.apk ./luci-app-wrtdeck-1.0.0-r1.apk
+> ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
 
@@ -51,14 +60,16 @@ opkg install ./owdash_1.0.0-1_aarch64_cortex-a53.ipk
 
 ### 可选：LuCI 薄壳
 
-如果设备上装了 LuCI，可以再装一个几十 KB 的 `luci-app-wrtdeck`，在 LuCI 菜单里得到一个「WrtDeck」入口，点一下即可**免密一跳进入面板**（不用手输口令或 Token，见第 6 节）：
+如果设备上装了 LuCI，可以再装一个几十 KB 的 `luci-app-wrtdeck`，在 LuCI 菜单里得到一个「WrtDeck」入口，点一下即可**免密一跳进入面板**（不用手输口令或 Token，见第 6 节）。
+
+先确认面板包已装好（`apk list -I | grep owdash`），再装薄壳：
 
 ```sh
 apk add --allow-untrusted ./luci-app-wrtdeck-1.0.0-r1.apk   # apk 设备
 opkg install ./luci-app-wrtdeck_1.0.0-1_all.ipk             # ipk 设备
 ```
 
-薄壳只有 rpcd 接口与一个前端视图，不含二进制，因此与 CPU 架构无关。
+薄壳只有 rpcd 接口与一个前端视图，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: owdash`，而 `owdash` 不在任何仓库里，面板没装好时这一步必然失败，报 `owdash (no such package)`。
 
 ## 3. 首次登录
 
