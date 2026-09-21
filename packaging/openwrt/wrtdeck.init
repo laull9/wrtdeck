@@ -12,10 +12,11 @@ CONF="$CONF_DIR/config.json"
 # 与 luci-app-wrtdeck 里的入口约定一致，两边改动要同步。
 WEB_DIR=/www/wrtdeck
 
-EXTRA_COMMANDS="token password export_web"
-EXTRA_HELP="	token       打印当前 API Token
-	password    重置登录口令（忘记口令时用）
-	export_web  把面板页面重新导出到 $WEB_DIR"
+EXTRA_COMMANDS="token password export_web migrate_config"
+EXTRA_HELP="	token          打印当前 API Token
+	password       重置登录口令（忘记口令时用）
+	export_web     把面板页面重新导出到 $WEB_DIR
+	migrate_config 把旧版本留下的配置补齐（升级后自动执行一次）"
 
 start_service() {
 	# 首次启动时 conf 目录可能不存在，配置与 Token 都在这里生成
@@ -74,4 +75,45 @@ password() {
 export_web() {
 	do_export_web
 	[ -f "$WEB_DIR/index.html" ] || echo "面板页面未导出，请检查 $WEB_DIR 是否可写"
+}
+
+# migrate_config 把旧版本留下的配置补齐成当前版本期望的形态。
+#
+# 目前只做一件事，但这件事必须做：1.0.0 的面板默认监听 0.0.0.0:8080，等于对整个
+# 局域网裸奔；1.0.1 起改成只监听回环，对外统一走 LuCI 那个源。而 config.json 是
+# 配置文件，升级时设备十有八九保留的是旧内容——apk 的默认保护规则是「/etc 下被
+# 管理员改过的文件不覆盖，新文件落成 .apk-new」，opkg 认 conffiles 同理。所以光换
+# 包不够，得在这里把旧默认值挪过来。
+#
+# 判断依据是「值恰好等于旧的出厂默认值」，而不是「版本号低于 1.0.1」：用户自己写过
+# 的监听地址一律不动，只提示风险。替用户改掉他显式选择过的地址，比留着旧默认值更糟。
+#
+# 幂等：改过之后值就不再是旧默认值，重复执行不会二次改动。
+migrate_config() {
+	[ -f "$CONF" ] || return 0
+
+	_listen="$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONF" | head -1)"
+	[ -n "$_listen" ] || return 0
+
+	case "$_listen" in
+	0.0.0.0:8080)
+		# 改前留一份：想退回旧行为时把那一行抄回去即可。
+		# 备份失败（目录只读之类）不终止流程，迁移本身继续。
+		cp -f "$CONF" "$CONF.pre-1.0.1" 2>/dev/null || true
+		if sed -i 's|"listen"[[:space:]]*:[[:space:]]*"0\.0\.0\.0:8080"|"listen": "127.0.0.1:8080"|' "$CONF"; then
+			logger -t wrtdeck "面板监听地址已从 0.0.0.0:8080 改为 127.0.0.1:8080，原配置备份为 $CONF.pre-1.0.1"
+			echo "WrtDeck：面板监听地址已从 0.0.0.0:8080 改为 127.0.0.1:8080。"
+			echo "  1.0.1 起面板不再单独对外开端口，对外访问与 LuCI 同源、同一套加密方式。"
+			echo "  仍想直接访问 8080 的话，把 $CONF.pre-1.0.1 里那一行抄回去，再 restart。"
+		else
+			logger -t wrtdeck "改写 $CONF 的监听地址失败，请手工改成 127.0.0.1:8080"
+		fi
+		;;
+	0.0.0.0:*)
+		logger -t wrtdeck "面板监听在 $_listen，建议改为 127.0.0.1:8080，统一从 LuCI 进入"
+		echo "WrtDeck：配置里 listen=$_listen，面板仍对整个局域网开放。"
+		echo "  建议改成 127.0.0.1:8080（1.0.1 起的出厂默认值），对外统一走 LuCI 那个源。"
+		;;
+	esac
+	return 0
 }

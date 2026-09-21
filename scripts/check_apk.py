@@ -31,6 +31,11 @@ PRESETS = {
         ],
         'depends': ['ca-bundle'],
         'scripts': ['post-install', 'post-upgrade', 'pre-deinstall'],
+        # 升级路径必须把旧版本留下的配置补齐：config.json 是配置文件，
+        # 升级时设备保留的往往是旧内容（apk 默认不覆盖 /etc 下被改过的文件），
+        # 少这一步就会继续按旧的 0.0.0.0:8080 启动。
+        'script_require': {'post-upgrade': ['migrate_config']},
+        'script_identical': [],
         'elf': True,
         'arch_elf': {
             'aarch64': 'ARM aarch64',
@@ -55,7 +60,12 @@ PRESETS = {
             ('www/cgi-bin/wrtdeck-api', '0755'),
         ],
         'depends': ['luci-base', 'wrtdeck'],
-        'scripts': ['post-install'],
+        # apk 升级只跑 post-upgrade、不跑 post-install，两条都必须声明：
+        # 漏掉 post-upgrade 的话，从 1.0.0 升上来的设备不会重启 rpcd、
+        # 不会补 cgi_prefix 符号链接，LuCI 里点进去是个空白框。
+        'scripts': ['post-install', 'post-upgrade'],
+        'script_require': {},
+        'script_identical': [['post-install', 'post-upgrade']],
         'elf': False,
         'arch_elf': {},
         'init': '',
@@ -229,15 +239,30 @@ def check_control(report, control_entries, fields, preset, data_hash, installed_
         report.expect(depend in fields.get('depend', []), '依赖包含 %s' % depend)
 
     # 安装脚本语法：apk 是直接 exec 这些脚本的，语法错误要到运行时才炸
+    contents = {}
     for entry in control_entries:
         if entry['name'] not in SCRIPT_ENTRY_NAMES:
             continue
+        name = entry['name'].lstrip('.')
+        contents[name] = entry['data']
         path = os.path.join(work_dir, 'hook%s' % entry['name'])
         with open(path, 'wb') as handle:
             handle.write(entry['data'])
         code, output = run(['sh', '-n', path])
         report.expect(code == 0, '%s 语法合法' % entry['name'], output.strip()[:120])
         report.expect(entry['mode'] & 0o111 != 0, '%s 带可执行权限' % entry['name'])
+
+    # 脚本内容约束。声明了却接错文件、或者升级入口落在一个不干活的脚本上，
+    # 光看结构是发现不了的——装上去才发现「升级后功能没生效」，最难查。
+    for name, needles in (preset.get('script_require') or {}).items():
+        for needle in needles:
+            report.expect(needle.encode() in contents.get(name, b''),
+                          '%s 里出现 %s' % (name, needle))
+    for group in (preset.get('script_identical') or []):
+        first = contents.get(group[0], b'')
+        for other in group[1:]:
+            report.expect(first and first == contents.get(other, b''),
+                          '%s 与 %s 内容一致（同一个钩子接在多个入口上）' % (group[0], other))
 
 
 # 小节四：数据段内容

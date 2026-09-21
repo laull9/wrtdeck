@@ -1,6 +1,11 @@
 #!/bin/sh
-# apk 升级后：保持用户当前的启停状态，只重启一次让新二进制生效
+# apk 升级后：先把旧版本遗留的配置补齐，再重启一次让新二进制生效
 [ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# apk 的默认保护规则是「/etc 下被管理员改过的文件不覆盖」，因此从 1.0.0 升上来时
+# 设备保留的仍是一份旧配置（默认监听 0.0.0.0:8080）。这一步把它补到新形态，
+# 必须在 restart 之前做，否则新二进制会按旧配置启动。
+/etc/init.d/wrtdeck migrate_config 2>/dev/null
 
 # 用户手动 disable 过就不要擅自拉起来，升级不应改变人为选择的状态
 if ls /etc/rc.d/S*wrtdeck >/dev/null 2>&1; then

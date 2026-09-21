@@ -33,11 +33,11 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 ```sh
 # OpenWrt 25.12 及以上（apk）
 apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
-apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
-opkg install ./wrtdeck_1.0.0-rc2-1_aarch64_cortex-a53.ipk
+opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk
 ```
 
 > **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
@@ -45,7 +45,7 @@ opkg install ./wrtdeck_1.0.0-rc2-1_aarch64_cortex-a53.ipk
 > 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
 >
 > ```sh
-> apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk ./luci-app-wrtdeck-1.0.0-rc2-r1.apk
+> apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
 > ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
@@ -65,8 +65,8 @@ opkg install ./wrtdeck_1.0.0-rc2-1_aarch64_cortex-a53.ipk
 先确认面板包已装好（`apk list -I | grep wrtdeck`），再装薄壳：
 
 ```sh
-apk add --allow-untrusted ./luci-app-wrtdeck-1.0.0-rc2-r1.apk   # apk 设备
-opkg install ./luci-app-wrtdeck_1.0.0-rc2-1_all.ipk             # ipk 设备
+apk add --allow-untrusted ./luci-app-wrtdeck-1.0.1-r1.apk   # apk 设备
+opkg install ./luci-app-wrtdeck_1.0.1-1_all.ipk             # ipk 设备
 ```
 
 薄壳只有 rpcd 后端、一个 LuCI 视图、一份菜单与一个 CGI 网关入口，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
@@ -120,11 +120,16 @@ cat /etc/wrtdeck/secrets.json
 /etc/init.d/wrtdeck token       # 打印当前 API Token
 /etc/init.d/wrtdeck password    # 重置登录口令（忘记口令时用）
 /etc/init.d/wrtdeck export_web  # 把面板页面重新导出到 /www/wrtdeck
+/etc/init.d/wrtdeck migrate_config  # 把旧版本留下的配置补齐（升级时自动跑一次）
 ```
 
 `password` 会从标准输入读一个新口令，重置后标记为「待修改」，下次登录仍需再改一次。它是设备主人忘记口令时**唯一的找回手段**，因此需要有 root shell 才能执行。
 
-`export_web` 在 `start` 时自动执行一次（页面编在二进制里，所以页面与二进制永远同版本）；LuCI 里出现空白框时可以手动重跑一次。子命令名用下划线而不是短横线，因为 `rc.common` 会把子命令名直接当函数名调用，而短横线不是合法的 shell 标识符字符——写成 `export-web()` 会让整个 init 脚本在任何子命令下都报语法错误。
+`export_web` 在 `start` 时自动执行一次（页面编在二进制里，所以页面与二进制永远同版本）；LuCI 里出现空白框时可以手动重跑一次。
+
+`migrate_config` 由升级钩子自动调用，只在配置里还是旧版本的出厂默认值时才动手（目前只有一项：`listen` 从 `0.0.0.0:8080` 改成 `127.0.0.1:8080`），改前留一份 `config.json.pre-1.0.1`。你自己写过的地址不会被改。升级完想确认或手工补跑时用它。
+
+这几个子命令名都用下划线而不是短横线，因为 `rc.common` 会把子命令名直接当函数名调用，而短横线不是合法的 shell 标识符字符——写成 `export-web()` 会让整个 init 脚本在任何子命令下都报语法错误。
 
 进程由 procd 托管，异常退出后按 5 秒间隔最多重启 5 次（1 小时后计数重置）；文件描述符上限提到 1024。
 
@@ -260,7 +265,7 @@ HSTS 只在**确认走的是 TLS** 时才下发，因此不会误伤明文部署
 
 ### LuCI 内嵌与同源网关
 
-这是 rc2 的核心变化。之前 LuCI 里只有一个跳转链接，而面板地址要靠浏览器去拼「设备地址 + 8080」——一旦设备被反向代理到公网域名，这个地址必然连不通，而且浏览器的加密方式与面板自己的对不上。现在面板被**原样复刻到 LuCI 所在的源上**：
+此前 LuCI 里只有一个跳转链接，而面板地址要靠浏览器去拼「设备地址 + 8080」——一旦设备被反向代理到公网域名，这个地址必然连不通，而且浏览器的加密方式与面板自己的对不上。现在面板被**原样复刻到 LuCI 所在的源上**：
 
 | 部分 | 挂在哪 | 谁在服务 |
 | --- | --- | --- |
@@ -402,17 +407,53 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ## 8. 升级与卸载
 
-```sh
-apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk          # apk 升级
-opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk      # ipk 升级
+只升级面板本体：
 
-apk del wrtdeck              # apk 卸载
-opkg remove wrtdeck          # ipk 卸载
+```sh
+apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk           # apk 设备
+opkg install ./wrtdeck_1.0.1-1_aarch64_cortex-a53.ipk      # ipk 设备
 ```
 
-- 升级时 `/etc/wrtdeck/config.json` 因 conffiles 声明而保留你的改动；控制脚本会 `restart` 服务而不是重新 `enable`。
-- `registry.json` 与 `secrets.json` 不在包内，升级和卸载都不会被清除，**口令与 Token 因此得以保留**。
+装了薄壳的话**两个包一起升**——薄壳负责同源网关与登录交接，两侧的约定是按版本对齐的：
+
+```sh
+apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
+```
+
+卸载：
+
+```sh
+apk del wrtdeck luci-app-wrtdeck            # apk 设备
+opkg remove wrtdeck luci-app-wrtdeck        # ipk 设备
+```
+
+- 服务不会被重新 `enable`。升级只在你原本就启用的前提下 `restart`，人为的启停选择不会被改掉。
+- `secrets.json` 与 `registry.json` 不在包内，升级和卸载都不会被清除，**口令、Token 与注册项因此得以保留**。
+- `config.json` 属于「升级时要保留」的那类文件：opkg 认 conffiles，apk 的默认规则是不覆盖 `/etc` 下被管理员改过的文件。所以升级后你会看到下面两种之一，都正常：
+  - 你**没改过**它 —— 直接整份换成新版，新默认值随之生效；
+  - 你**改过**它 —— 你的那份被保留，新版落在旁边的 `config.json.apk-new`（apk）或 `config.json-opkg`（ipk）里，供你比对后自行合并。
 - 卸载后如需彻底清理：`rm -rf /etc/wrtdeck`。
+
+### 从 1.0.0 升级
+
+1.0.1 有两处会让旧配置「看着正常、其实已经不是这个版本的形态」的变化，升级路径上会自动处理掉：
+
+| 变化 | 升级时会发生什么 |
+| --- | --- |
+| 面板默认监听从 `0.0.0.0:8080` 收敛到 `127.0.0.1:8080`，对外统一走 LuCI 那个源 | `listen` 仍是旧的出厂默认值时，安装脚本自动改成 `127.0.0.1:8080`，并在原配置旁留一份 `config.json.pre-1.0.1` 备份。你自己写过的地址**不会**被改，只在安装输出里提示一句风险 |
+| 面板页面改由设备 Web 服务器从 `/www/wrtdeck/` 提供，接口走同源 CGI | 面板启动时自动把页面导出过去；薄壳的安装钩子按设备实际的 `cgi_prefix` 补一个网关入口，并重启 rpcd、清掉 LuCI 菜单缓存 |
+
+装完建议确认三件事：
+
+```sh
+grep listen /etc/wrtdeck/config.json    # 应为 127.0.0.1:8080，除非你故意改过
+ls -l /www/wrtdeck/index.html           # 面板页面是否就位
+ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
+```
+
+页面缺失而服务在跑时，执行 `/etc/init.d/wrtdeck export_web` 重新导出；网关入口缺失时，按设备实际的 `cgi_prefix` 补一条软链，或者 `/etc/init.d/wrtdeck restart` 让钩子重新跑一遍。
+
+> LuCI 里点进去是个**空白框**，几乎只有一个原因：两个包版本不一致。页面是面板本体启动时导出的，只升薄壳不升面板时那个文件根本不存在。两个包一起升。
 
 ### 从旧包名 owdash 升级
 
@@ -423,7 +464,7 @@ opkg remove wrtdeck          # ipk 卸载
 /etc/init.d/owdash stop
 apk del owdash luci-app-wrtdeck            # 或 opkg remove owdash luci-app-wrtdeck
 mv /etc/owdash /etc/wrtdeck                # 想保留口令、Token 与注册项时必须做这一步
-apk add --allow-untrusted ./wrtdeck-1.0.0-rc2-r1.apk ./luci-app-wrtdeck-1.0.0-rc2-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.1-r1.apk ./luci-app-wrtdeck-1.0.1-r1.apk
 ```
 
 - 不迁移 `/etc/owdash` 也能启动，但会当成全新安装：初始口令回到 `admin`，API Token 重新生成。
@@ -443,8 +484,10 @@ make luci                                           # 只要薄壳（与架构�
 GOARCH=arm     make apk                             # ARMv7
 GOARCH=amd64   make apk                             # x86_64
 GOARCH=mipsle  make ipk                             # MIPS 小端
-VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本
+VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.1-r1
 ```
+
+版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.1`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
 
 产物在 `dist/`：
 
@@ -503,6 +546,10 @@ make test-pkg      # 上面几项一次跑全（推荐提交前执行）
 | `opkg install` 报架构不匹配 | `opkg print-architecture` 与包名里的架构对比，按第 1 节的表重新打包 |
 | 装了但进程起不来 | `logread -e wrtdeck`；常见原因是 `auth.token_env` 声明了但变量为空（会明确报错） |
 | 局域网直连 `<设备IP>:8080` 打不开 | 默认只监听回环，属预期。走 LuCI 的「服务 → WrtDeck」，或按第 3 节把 `listen` 改成 `0.0.0.0:8080` |
+| 从 1.0.0 升级后 `config.json` 旁边多了 `.apk-new` / `-opkg` 文件 | 包管理器保留了你改过的那份配置，新版放在旁边。核对差异后自行合并，合并完删掉即可 |
+| 升级后 `listen` 还是 `0.0.0.0:8080`，面板仍在局域网裸奔 | 说明你改过 `config.json`，安装脚本按「用户显式选择优先」的规则没有动它。手工执行 `/etc/init.d/wrtdeck migrate_config` 补一次，或自己把值改成 `127.0.0.1:8080` 后 `restart` |
+| 升级后 LuCI 里点进去是空白框 | 先确认两个包都升了（只升薄壳时页面根本不存在），再看 `/www/wrtdeck/index.html` 与 `<cgi_prefix>/wrtdeck-api` 是否就位，见第 8 节 |
+| 升级后 LuCI 里能打开但要输口令 | rpcd 没重启，网关认不出会话。装薄壳时钩子会重启它；手工补：`/etc/init.d/rpcd restart` |
 | LuCI 里是一个空白框 | 面板页面没导出：`/etc/init.d/wrtdeck restart`，或手动 `/etc/init.d/wrtdeck export_web`；确认 `/www` 可写 |
 | LuCI 里能打开但要求输口令 | 网关没就绪或 LuCI 会话没被认出来，见第 6 节「LuCI 内嵌与同源网关」的排障表 |
 | 界面写「定时刷新」而不是「实时推送」 | 内嵌时的正常表现：不走 SSE 长连接，改走定时拉取 |

@@ -59,7 +59,11 @@ PKG_DESC_LONG="在 LuCI 的「服务」菜单下增加 WrtDeck 项，把面板�
 面板本体与页面资源由 wrtdeck 包提供，本包只做入口、同源网关与凭据交接。"
 PKG_DEPS="luci-base wrtdeck"
 PKG_LICENSE="MIT"
+# apk 升级只跑 post-upgrade、不跑 post-install，两条路径都要接上：
+# 从 1.0.0 升上来时，rpcd 重启、cgi_prefix 符号链接与 LuCI 菜单缓存清空全靠这个钩子，
+# 漏接的现场是「菜单点得进去，里面是个空白框」
 PKG_APK_SCRIPTS="post-install=$root/packaging/luci/hooks/post-install"
+PKG_APK_SCRIPTS="$PKG_APK_SCRIPTS post-upgrade=$root/packaging/luci/hooks/post-install"
 PKG_IPK_SCRIPTS="postinst=$root/packaging/luci/hooks/post-install"
 
 case "$format" in

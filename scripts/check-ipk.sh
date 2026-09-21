@@ -209,6 +209,17 @@ wrtdeck)
   else
     ng "配置目录 $conf_dir 与包内容不一致"
   fi
+
+  # 升级路径：config.json 是配置文件，升级时设备保留的往往是旧内容
+  # （opkg 认 conffiles，apk 默认不覆盖 /etc 下被改过的文件），因此包里必须
+  # 带一步配置迁移，把旧版本遗留的监听地址补到新形态。缺了这一步，
+  # 从 1.0.0 升上来的面板会继续监听 0.0.0.0:8080，等于还在对局域网裸奔。
+  assert_has "$work/control/postinst" 'migrate_config' "升级钩子调用配置迁移"
+  assert_has "$init" '^migrate_config()' "init 里定义了 migrate_config 子命令"
+  assert_has "$init" 'migrate_config' "migrate_config 列在 EXTRA_COMMANDS 里"
+  assert_has "$init" '0\.0\.0\.0:8080' "迁移认得旧版本的默认监听地址"
+  assert_has "$init" '0\.0\.0\.0:\*' "自定义的对外监听地址只提示不改写"
+
   # 面板页面是面板本体在启动时导出的，导出目录必须与 LuCI 入口里的约定一致。
   # 两处对不上时页面在 LuCI 里会 404，而两边各自看都没问题，很难定位。
   web_dir="$(sed -n 's/^WEB_DIR=//p' "$init" | head -1)"

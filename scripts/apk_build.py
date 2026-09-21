@@ -58,7 +58,8 @@ def parse_args(argv):
     parser.add_argument('--replaces', action='append', default=[], help='替代的包，可重复')
     parser.add_argument('--script', action='append', default=[], help='安装脚本 名称=路径')
     parser.add_argument('--builddate', type=int, default=0, help='构建时间戳，0 表示取当前时间')
-    parser.add_argument('--conffiles', action='append', default=[], help='需要保护的配置文件路径（仅用于自检输出）')
+    parser.add_argument('--conffiles', action='append', default=[],
+                        help='配置文件路径，仅用于打包日志提示；apk 默认已保护 /etc 下被改过的文件')
     parser.add_argument('--sign-key', default='', help='RSA 私钥路径，给出即签名')
     parser.add_argument('--sign-name', default='', help='公钥文件名，签名段条目名由它拼出')
     parser.add_argument('--sign-pub-out', default='', help='把公钥导出到这里，便于拷贝到设备')
@@ -226,7 +227,10 @@ def main(argv):
     print('[apk] 架构 %s  段数 %d  文件 %d 个  安装占用 %d 字节' % (
         fields['arch'][0], len(members), len(entries), installed_size))
     if args.conffiles:
-        print('[apk] 声明保护配置 %s' % ' '.join(args.conffiles))
+        # 说清楚这条不是本脚本实现的：apk 的默认保护规则已经是「/etc 下被管理员改过
+        # 的文件不覆盖，新文件落成 .apk-new」，因此这些路径天然被保护。
+        # 这里只是把预期打出来，好在打包日志里一眼看到配置文件有没有被算进去。
+        print('[apk] 配置文件 %s（apk 默认保护 /etc，无需另行声明）' % ' '.join(args.conffiles))
     print('[apk] 产物 %s  %d 字节' % (args.out, size))
     if args.sign_key:
         print('[apk] 已签名，公钥 %s 需放到设备 /etc/apk/keys/' % args.sign_name)

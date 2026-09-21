@@ -13,6 +13,10 @@ if [ ! -f /etc/wrtdeck/.installed ]; then
 	echo "  - 忘记口令：/etc/init.d/wrtdeck password"
 	echo "  - 脚本用的 API Token：/etc/init.d/wrtdeck token"
 else
+	# 走到这里说明是升级，不是全新安装。用标记文件判断而不是解析 $1：
+	# opkg 传 "upgrade"、apk 走另一个脚本，标记文件对两种包格式都一样可靠。
+	# 迁移必须在 restart 之前，否则新二进制会按旧配置启动。
+	/etc/init.d/wrtdeck migrate_config 2>/dev/null
 	/etc/init.d/wrtdeck restart
 fi
 

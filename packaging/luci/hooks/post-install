@@ -11,7 +11,10 @@
 # 只有在「页面确实不见了、而面板又是开着的」这一种情况下才补一次重启，
 # 免得用户面对一个空白框。
 #
-# apk 与 ipk 共用这一份脚本，安装脚本名由各自的包格式决定。
+# apk 与 ipk 共用这一份脚本，安装脚本名由各自的包格式决定：
+# apk 同时接在 post-install 与 post-upgrade 上，ipk 接在 postinst 上。
+# 升级路径必须接住——apk 升级只跑 post-upgrade，漏接的话上面这三件事一件都不会做，
+# 现象是「菜单点得进去、里面是个空白框」，而且一调 ubus 就报权限不足。
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
 /etc/init.d/rpcd restart 2>/dev/null
@@ -31,10 +34,17 @@ if [ "$prefix" != "/cgi-bin" ]; then
 	ln -sf /www/cgi-bin/wrtdeck-api "/www$prefix/wrtdeck-api" 2>/dev/null
 fi
 
-# 页面缺席而面板在跑时补一次重启，让本体把页面重新导出
+# 页面缺席而面板在跑时补一次重启，让本体把页面重新导出；
+# 重启之后页面还是没出现，就只剩一个解释：面板本体还停在 1.0.1 之前——
+# 页面是 1.0.1 起才由本体启动时导出的。这时候把原因说出来，比让用户对着
+# 一个空白框自己猜要好。用户手动 disable 过面板就不提示了，那是他自己的选择。
 if [ ! -f /www/wrtdeck/index.html ] && [ -x /etc/init.d/wrtdeck ]; then
 	if ls /etc/rc.d/S*wrtdeck >/dev/null 2>&1; then
 		/etc/init.d/wrtdeck restart 2>/dev/null
+		if [ ! -f /www/wrtdeck/index.html ]; then
+			echo "WrtDeck：面板页面 /www/wrtdeck/index.html 仍未导出。"
+			echo "  页面由面板本体在启动时生成，请确认 wrtdeck 包已升到 1.0.1 及以上。"
+		fi
 	fi
 fi
 

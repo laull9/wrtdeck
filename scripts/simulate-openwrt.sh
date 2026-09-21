@@ -466,10 +466,145 @@ grep -q 'embed' "$root/packaging/luci/root/www/luci-static/resources/view/wrtdec
   die "薄壳没有把嵌入与 API 前缀告诉面板，面板会去猜设备地址"
 ok "薄壳把 API 前缀与嵌入标志传给面板，面板不推断设备地址"
 
+# ── 10. 覆盖低版本安装（1.0.0 → 1.0.1）─────────────────────────────────────
+# 这一节回答的是「装过旧版本的设备能不能平滑升上来」。
+#
+# 难点在配置文件：它属于升级时要保留的那一类，opkg 认 conffiles，apk 的默认保护
+# 规则是不覆盖 /etc 下被管理员改过的文件（新文件落成 .apk-new）。也就是说无论哪种
+# 格式，设备留下来的都还是旧内容。包管理器只负责换文件，把旧值迁到新形态得靠包里
+# 的钩子——所以这里按包管理器的方式真调一次升级钩子，而不是只检查它写了什么。
+step "10. 覆盖低版本安装（1.0.0 → 1.0.1）"
+
+upgrade_dir="$stage/upgrade/etc/wrtdeck"
+mkdir -p "$upgrade_dir" "$stage/upgrade/rc.d" "$stage/bin"
+
+# 1.0.0 的出厂配置：监听 0.0.0.0:8080（对整个局域网裸奔），也没有 gateway 段。
+# 用户在上面改过一处（history_limit），这一处必须原样活下来。
+cat > "$upgrade_dir/config.json" <<'JSON'
+{
+  "listen": "0.0.0.0:8080",
+  "data_dir": "/etc/wrtdeck",
+  "auth": {},
+  "tls": { "enabled": false },
+  "exec": { "enabled": true },
+  "limits": { "history_limit": 240 },
+  "workers": { "source": 4, "action": 4 },
+  "mqtt": { "keepalive_seconds": 30, "connect_timeout_ms": 5000, "max_reconnect_delay_ms": 30000 }
+}
+JSON
+# 用户数据不归包管，升级必须原封不动。.installed 是首次安装时留下的标记，
+# 包里的钩子正是靠它区分「全新安装」与「升级」。
+printf '{"password":"scrypt$sim","must_change_password":false}\n' > "$upgrade_dir/secrets.json"
+printf '[{"id":"sim-selfcheck"}]\n' > "$upgrade_dir/registry.json"
+: > "$upgrade_dir/.installed"
+secrets_before="$(cat "$upgrade_dir/secrets.json")"
+registry_before="$(cat "$upgrade_dir/registry.json")"
+ok "已构造 1.0.0 现场（旧出厂配置 + 用户改过的 history_limit + 用户数据）"
+
+# 设备上钩子调的是 /etc/init.d/wrtdeck，而 rc.common 会把子命令名直接当函数名调用。
+# 开发机上没有 rc.common，用一个小壳子照它的做派转发——顺带也就验证了
+# 「子命令名必须是合法 shell 标识符」这条约束在真实进程里成立。
+upgrade_init="$stage/upgrade/init.d"
+sed "s#^CONF_DIR=.*#CONF_DIR=$upgrade_dir#" "$init" > "$upgrade_init"
+shim="$stage/bin/wrtdeck-init"
+cat > "$shim" <<EOF
+#!/bin/sh
+# 模拟设备上的 /etc/init.d/wrtdeck：rc.common 把子命令名当函数名调用。
+# start/stop/restart 这类动作由 rc.common 提供，开发机上没有对应实现，按成功处理。
+. "$upgrade_init"
+case "\$1" in
+	start|stop|restart|reload|enable|disable) exit 0 ;;
+esac
+"\$1"
+EOF
+chmod 0755 "$shim"
+
+# 包管理器会调的那个钩子：ipk 是 postinst，apk 升级时只跑 post-upgrade
+case "$format" in
+  apk) upgrade_hook="$stage/control/post-upgrade" ;;
+  ipk) upgrade_hook="$stage/unpack/postinst" ;;
+esac
+[ -f "$upgrade_hook" ] || die "找不到 $format 的升级钩子"
+
+# 把钩子里的设备绝对路径换成模拟路径：/etc/wrtdeck 指向上面那份「1.0.0 现场」，
+# /etc/init.d/wrtdeck 指向小壳子，/etc/rc.d 下造一个已启用的记号，
+# 这样「升级后重启一次」那条分支也会真的走到
+: > "$stage/upgrade/rc.d/S95wrtdeck"
+hook_run="$stage/upgrade/hook"
+sed -e "s#/etc/init\.d/wrtdeck#$shim#g" \
+    -e "s#/etc/rc\.d#$stage/upgrade/rc.d#g" \
+    -e "s#/etc/wrtdeck#$upgrade_dir#g" \
+    "$upgrade_hook" > "$hook_run"
+chmod 0755 "$hook_run"
+sh -n "$hook_run" || die "改写后的升级钩子语法不合法"
+ok "按包管理器的调法准备好升级钩子（$(basename "$upgrade_hook")）"
+
+"$hook_run" > "$stage/upgrade/hook.out" 2>&1 ||
+  die "升级钩子执行失败：$(cat "$stage/upgrade/hook.out")"
+ok "升级钩子执行成功"
+
+# 出厂默认的对外监听必须迁到回环。这是 1.0.1 的核心安全变化，也是「覆盖低版本安装」
+# 最容易漏掉的一步——包换新了，配置还是旧的，面板等于仍在局域网里裸奔。
+if grep -q '"listen": *"127\.0\.0\.1:8080"' "$upgrade_dir/config.json"; then
+  ok "旧版本的 0.0.0.0:8080 已迁到 127.0.0.1:8080"
+else
+  die "升级后 listen 仍是旧值：$(grep '"listen"' "$upgrade_dir/config.json")"
+fi
+if [ "$(grep -c '"listen"' "$upgrade_dir/config.json")" = "1" ]; then
+  ok "迁移是就地改写，没有留下重复键"
+else
+  die "迁移写出了重复的 listen 键"
+fi
+
+# 用户自己改过的项必须活着，否则「升级不覆盖用户配置」这句话就是假的
+if grep -q '"history_limit": *240' "$upgrade_dir/config.json"; then
+  ok "用户改过的配置项在升级后原样保留"
+else
+  die "升级弄丢了用户改过的配置项"
+fi
+
+[ "$(cat "$upgrade_dir/secrets.json")" = "$secrets_before" ] || die "升级改动了口令数据"
+[ "$(cat "$upgrade_dir/registry.json")" = "$registry_before" ] || die "升级改动了注册表"
+ok "口令与注册表原封不动（这两样不在包里，升级不该碰）"
+
+[ -f "$upgrade_dir/config.json.pre-1.0.1" ] || die "迁移没有留下原配置备份"
+ok "迁移留下了原配置备份（想退回旧行为时有据可依）"
+
+# 幂等：包管理器重装同版本、或用户手工再跑一次子命令，都不该二次改动
+conf_after="$(cat "$upgrade_dir/config.json")"
+"$hook_run" > /dev/null 2>&1 || true
+if [ "$(cat "$upgrade_dir/config.json")" = "$conf_after" ]; then
+  ok "重复执行升级钩子幂等"
+else
+  die "重复执行升级钩子会二次改动配置"
+fi
+
+# 反过来：用户在 1.0.0 上自己挑的监听地址不能被替掉——那是他显式选择的行为，
+# 替他改掉比留着旧默认值更糟，正确做法是只提示风险。
+# 这一条直接调函数，因为要换一个 CONF 指向，不必再搭一套钩子。
+custom_conf="$stage/upgrade/custom.json"
+printf '{\n  "listen": "0.0.0.0:9090",\n  "limits": { "history_limit": 240 }\n}\n' > "$custom_conf"
+conf_saved="$CONF"
+CONF="$custom_conf"
+migrate_config > "$stage/upgrade/custom.out" 2>&1 || true
+CONF="$conf_saved"
+if grep -q '"listen": *"0\.0\.0\.0:9090"' "$custom_conf"; then
+  ok "用户自己写的监听地址不被迁移改写"
+else
+  die "迁移擅自改写了用户自己选的监听地址"
+fi
+if grep -q '0.0.0.0:9090' "$stage/upgrade/custom.out"; then
+  ok "自定义监听地址给出了风险提示"
+else
+  die "迁移对自定义监听地址一声不响，用户不会知道面板仍对外开着口"
+fi
+
 printf '\n== 结果 ==\n'
 printf '  安装模拟全部通过（%s 包）：\n' "$format"
 printf '  init 脚本可拉起服务；首启口令可用且强制更换；改口令后旧会话立即失效；\n'
 printf '  登录失败会被限速；一次性登录码只能用一次且限同源；数据落在 data_dir；\n'
-printf '  同源网关只转发面板 API 且不凭白给凭据，面板页面自带相对路径资源\n'
+printf '  同源网关只转发面板 API 且不凭白给凭据，面板页面自带相对路径资源；\n'
+printf '  装过 1.0.0 的设备升上来时，旧配置的对外监听会被迁到回环，\n'
+printf '  用户改过的配置项与用户数据原样保留，重复执行幂等\n'
 printf '\n  注意：本脚本与真实设备的差异只有两处——procd 被桩化、二进制换成本机版本，\n'
 printf '  其余（HTTP 接口、凭据校验、落盘位置）都是真实执行的结果。\n'
