@@ -112,7 +112,7 @@ make clean          # 清理构建产物
 | 安全响应头 | `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Permissions-Policy` 收窄；`/api/` 一律 `Cache-Control: no-store` |
 | Host 校验与重定向 | 启用 Host 白名单；明文 308 重定向严格校验目标主机，阻断开放重定向 |
 | 写接口 CSRF 防护 | 中间件对 POST / PUT / DELETE 操作强制验证同源（Origin / Referer） |
-| Exec 绝对路径与安全目录 | Exec 传输白名单强制绝对路径匹配，禁止在 `/tmp`、`/dev/shm` 等可写临时目录执行程序 |
+| Exec 黑名单与安全目录 | Exec 传输放宽常规系统命令，支持 PATH 解析；禁止在 `/tmp`、`/dev/shm` 等可写临时目录执行程序，支持自定义黑名单 |
 | 云元数据 SSRF 拦截 | 传输层默认阻断访问 `169.254.169.254` 云元数据服务 |
 | HSTS | 仅在启用 TLS 时下发 |
 | 可选 TLS | 自带证书或自动生成 ECDSA P-256 自签证书（10 年有效，落盘 `data_dir`）；启用后另起明文监听并 308 重定向 |
@@ -223,7 +223,7 @@ packaging/luci/       luci-app-wrtdeck 薄壳：rpcd 后端、菜单、LuCI 视�
 ## 已知限制
 
 - MQTT 只实现 3.1.1，不支持 MQTT 5.0 与 WebSocket 承载（`ws://` / `wss://` 会在连接时给出明确错误）。
-- Exec 传输默认关闭，需要在 `config.json` 中开启 `exec.enabled` 并配置 `exec.allowlist`。
+- Exec 传输默认关闭，需要在 `config.json` 中开启 `exec.enabled`（可配置 `exec.blocklist` 屏蔽指定程序）。
 - 运行历史只驻内存，进程重启即清空；需要长期留存请自行拉取 `/api/v1/sources/{id}/history`。
 - 会话凭据同样只驻内存，进程重启后浏览器需要重新登录，**API Token 不受影响**。
 - apk / ipk 已通过结构校验与安装模拟，但**尚未在真实 OpenWrt 设备上安装验证**（构建环境无设备、QEMU 或容器）。

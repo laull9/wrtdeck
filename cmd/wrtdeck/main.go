@@ -253,6 +253,7 @@ func run(opts options) error {
 		MaxBodyBytes:   cfg.Limits.MaxBodyBytes,
 		DefaultTimeout: time.Duration(cfg.Limits.DefaultTimeoutMS) * time.Millisecond,
 		ExecEnabled:    cfg.Exec.Enabled,
+		ExecBlocklist:  cfg.Exec.Blocklist,
 		ExecAllowlist:  cfg.Exec.Allowlist,
 		MQTT:           pool,
 	}

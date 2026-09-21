@@ -24,7 +24,7 @@ func (e *exec_transport) Type() string { return registry.TransportExec }
 // Available 表示 Exec 传输已编译，但能否执行还要看配置是否放开
 func (e *exec_transport) Available() bool { return true }
 
-// Do 按 allowlist 校验后执行外部程序
+// Do 经过安全校验与黑名单判定后执行外部程序
 func (e *exec_transport) Do(ctx context.Context, spec registry.TransportSpec, opts Options) (*Result, error) {
 	if spec.Exec == nil {
 		return nil, fmt.Errorf("缺少 transport.exec 配置")
@@ -33,29 +33,47 @@ func (e *exec_transport) Do(ctx context.Context, spec registry.TransportSpec, op
 		return nil, ErrExecDisabled
 	}
 	cfg := spec.Exec
-	absolute, err := filepath.Abs(cfg.Executable)
+	target_path, err := resolve_executable(cfg.Executable)
 	if err != nil {
-		return nil, fmt.Errorf("解析可执行文件路径失败: %w", err)
+		return nil, fmt.Errorf("解析可执行文件失败: %w", err)
 	}
-	if !exec_allowed(absolute, opts.ExecAllowlist) {
-		return nil, fmt.Errorf("可执行文件 %s 不在 allowlist 中", absolute)
+	if !exec_allowed(target_path, opts.ExecBlocklist) {
+		return nil, fmt.Errorf("可执行文件 %s 被黑名单或安全策略拦截", target_path)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout_of(cfg.TimeoutMS, opts))
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, absolute, cfg.Args...)
+	cmd := exec.CommandContext(ctx, target_path, cfg.Args...)
 	output, err := cmd.CombinedOutput()
 	res := &Result{
 		StatusCode: 200,
 		Body:       truncate(output, opts.MaxBodyBytes),
 		BodyText:   preview(output, 200),
-		Detail:     fmt.Sprintf("%s 退出", filepath.Base(absolute)),
+		Detail:     fmt.Sprintf("%s 退出", filepath.Base(target_path)),
 	}
 	if err != nil {
 		return res, fmt.Errorf("执行失败: %w", err)
 	}
 	return res, nil
+}
+
+// resolve_executable 解析命令名为系统中的绝对路径
+func resolve_executable(name string) (string, error) {
+	target := strings.TrimSpace(name)
+	if target == "" {
+		return "", fmt.Errorf("可执行文件不能为空")
+	}
+	if !filepath.IsAbs(target) {
+		if resolved, err := exec.LookPath(target); err == nil {
+			target = resolved
+		}
+	}
+	absolute, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
 }
 
 // insecure_dirs 定义禁止执行程序的临时与易写目录
@@ -72,28 +90,32 @@ func is_insecure_path(path string) bool {
 	return false
 }
 
-// exec_allowed 判断目标程序是否命中 allowlist，要求绝对路径或 PATH 系统命令匹配
-func exec_allowed(path string, allowlist []string) bool {
+// exec_allowed 判断目标程序是否放行：放宽常规系统命令，仅拦截黑名单与临时目录
+func exec_allowed(path string, blocklist []string) bool {
 	clean := filepath.Clean(path)
 	if is_insecure_path(clean) {
 		return false
 	}
-	for _, item := range allowlist {
+	base := strings.ToLower(filepath.Base(clean))
+	for _, item := range blocklist {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
+		if strings.EqualFold(item, base) {
+			return false
+		}
 		if filepath.IsAbs(item) {
 			if filepath.Clean(item) == clean {
-				return true
+				return false
 			}
 		} else {
 			if lp, err := exec.LookPath(item); err == nil {
 				if abs_lp, err := filepath.Abs(lp); err == nil && filepath.Clean(abs_lp) == clean {
-					return true
+					return false
 				}
 			}
 		}
 	}
-	return false
+	return true
 }

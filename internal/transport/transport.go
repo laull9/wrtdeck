@@ -27,6 +27,7 @@ type Options struct {
 	MaxBodyBytes   int
 	DefaultTimeout time.Duration
 	ExecEnabled    bool
+	ExecBlocklist  []string
 	ExecAllowlist  []string
 	// MQTT 是进程内共享的 broker 连接池，未初始化时 MQTT 传输不可用
 	MQTT *MQTTPool

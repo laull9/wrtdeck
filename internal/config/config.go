@@ -132,9 +132,10 @@ func (g GatewayConfig) Timeout() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// ExecConfig 控制 Exec 传输的开关与白名单
+// ExecConfig 控制 Exec 传输的开关与黑名单
 type ExecConfig struct {
 	Enabled   bool     `json:"enabled"`
+	Blocklist []string `json:"blocklist,omitempty"`
 	Allowlist []string `json:"allowlist,omitempty"`
 }
 

@@ -33,11 +33,11 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 ```sh
 # OpenWrt 25.12 及以上（apk）
 apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
-apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
-opkg install ./wrtdeck_1.0.3-1_aarch64_cortex-a53.ipk
+opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk
 ```
 
 > **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
@@ -45,7 +45,7 @@ opkg install ./wrtdeck_1.0.3-1_aarch64_cortex-a53.ipk
 > 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
 >
 > ```sh
-> apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk ./luci-app-wrtdeck-1.0.3-r1.apk
+> apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
 > ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
@@ -65,8 +65,8 @@ opkg install ./wrtdeck_1.0.3-1_aarch64_cortex-a53.ipk
 先确认面板包已装好（`apk list -I | grep wrtdeck`），再装薄壳：
 
 ```sh
-apk add --allow-untrusted ./luci-app-wrtdeck-1.0.3-r1.apk   # apk 设备
-opkg install ./luci-app-wrtdeck_1.0.3-1_all.ipk             # ipk 设备
+apk add --allow-untrusted ./luci-app-wrtdeck-1.0.4-r1.apk   # apk 设备
+opkg install ./luci-app-wrtdeck_1.0.4-1_all.ipk             # ipk 设备
 ```
 
 薄壳只有 rpcd 后端、一个 LuCI 视图、一份菜单与一个 CGI 网关入口，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
@@ -413,14 +413,14 @@ curl -H "Authorization: Bearer $TOKEN" \
 只升级面板本体：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk           # apk 设备
-opkg install ./wrtdeck_1.0.3-1_aarch64_cortex-a53.ipk      # ipk 设备
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk           # apk 设备
+opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk      # ipk 设备
 ```
 
 装了薄壳的话**两个包一起升**——薄壳负责同源网关与登录交接，两侧的约定是按版本对齐的：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk ./luci-app-wrtdeck-1.0.3-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
 ```
 
 卸载：
@@ -458,6 +458,22 @@ ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
 
 > LuCI 里点进去是个**空白框**，几乎只有一个原因：两个包版本不一致。页面是面板本体启动时导出的，只升薄壳不升面板时那个文件根本不存在。两个包一起升。
 
+### 从 1.0.3 升级
+
+1.0.4 放宽了 Exec 传输限制并改为黑名单机制：
+
+| 改进项 | 说明 |
+| --- | --- |
+| Exec 黑名单机制 | 放宽常规系统命令限制，`cat`、`ubus`、`uptime` 等命令支持直接通过 PATH 解析调用 |
+| 临时目录阻断 | 持续禁止执行 `/tmp`、`/dev/shm`、`/run` 等可写临时目录中的程序 |
+| 自定义黑名单 | 支持在 `config.json` 的 `exec.blocklist` 中显式指定需要屏蔽的程序 |
+
+升级命令：
+
+```sh
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+```
+
 ### 从 1.0.2 升级
 
 1.0.3 强化了公网与反向代理环境下的安全防护：
@@ -468,14 +484,14 @@ ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
 | IPv6 网段聚合与限速表保护 | IPv6 来源按 `/64` 网段限速；容量上限时按时间逐出淘汰，防止地址轮换重置退避锁定 |
 | Host 校验与重定向保护 | 启用 Host 白名单；修复 308 明文跳转时的开放重定向，并安全净化 CSP 中的主机名 |
 | 写接口来源防护 | 统一拦截跨站来源（CSRF），修改类操作必须来自同源页面 |
-| Exec 白名单与路径安全 | 严格校验绝对路径，彻底移除 Basename 模糊匹配，并禁止在 `/tmp` 等临时目录执行脚本 |
+| Exec 目录安全 | 禁止在 `/tmp` 等可写临时目录执行脚本 |
 | 云元数据 SSRF 拦截 | 默认阻断针对 `169.254.169.254` 的 HTTP 探测 |
 | 默认监听地址收敛 | 源码默认监听地址统一改为 `127.0.0.1:8080`，避免未配置时全网卡暴露 |
 
 升级命令：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk ./luci-app-wrtdeck-1.0.3-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
 ```
 
 ### 从 1.0.1 升级
@@ -506,7 +522,7 @@ apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
 /etc/init.d/owdash stop
 apk del owdash luci-app-wrtdeck            # 或 opkg remove owdash luci-app-wrtdeck
 mv /etc/owdash /etc/wrtdeck                # 想保留口令、Token 与注册项时必须做这一步
-apk add --allow-untrusted ./wrtdeck-1.0.3-r1.apk ./luci-app-wrtdeck-1.0.3-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
 ```
 
 - 不迁移 `/etc/owdash` 也能启动，但会当成全新安装：初始口令回到 `admin`，API Token 重新生成。
@@ -526,10 +542,10 @@ make luci                                           # 只要薄壳（与架构�
 GOARCH=arm     make apk                             # ARMv7
 GOARCH=amd64   make apk                             # x86_64
 GOARCH=mipsle  make ipk                             # MIPS 小端
-VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.3-r1
+VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.4-r1
 ```
 
-版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.3`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
+版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.4`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
 
 产物在 `dist/`：
 
