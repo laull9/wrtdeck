@@ -100,7 +100,7 @@ migrate_config() {
 		# 改前留一份：想退回旧行为时把那一行抄回去即可。
 		# 备份失败（目录只读之类）不终止流程，迁移本身继续。
 		cp -f "$CONF" "$CONF.pre-1.0.1" 2>/dev/null || true
-		if sed -i 's|"listen"[[:space:]]*:[[:space:]]*"0\.0\.0\.0:8080"|"listen": "127.0.0.1:8080"|' "$CONF"; then
+		if sed 's|"listen"[[:space:]]*:[[:space:]]*"0\.0\.0\.0:8080"|"listen": "127.0.0.1:8080"|' "$CONF" > "$CONF.tmp" && mv -f "$CONF.tmp" "$CONF"; then
 			logger -t wrtdeck "面板监听地址已从 0.0.0.0:8080 改为 127.0.0.1:8080，原配置备份为 $CONF.pre-1.0.1"
 			echo "WrtDeck：面板监听地址已从 0.0.0.0:8080 改为 127.0.0.1:8080。"
 			echo "  1.0.1 起面板不再单独对外开端口，对外访问与 LuCI 同源、同一套加密方式。"

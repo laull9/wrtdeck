@@ -207,6 +207,39 @@ func password_change_path(path string) bool {
 	return false
 }
 
+// with_host_validation 校验请求中的 Host 头是否合法
+func (s *Server) with_host_validation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.dev {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !host_allowed(r.Host, s.cfg.Auth.AllowedHosts) {
+			write_error(w, http.StatusBadRequest, "invalid_host", "请求的 Host 头不受信任或格式非法")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// with_csrf_protection 检查修改类接口的来源，拦截跨站伪造请求
+func (s *Server) with_csrf_protection(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.dev || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodDelete:
+			if ok, present := same_origin(r); present && !ok {
+				write_error(w, http.StatusForbidden, "cross_origin_forbidden", "跨站来源请求被拒绝")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // with_security_headers 给所有响应加上安全头，按「面板可能直接暴露在公网」来配。
 func (s *Server) with_security_headers(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,10 +255,15 @@ func (s *Server) with_security_headers(next http.Handler) http.Handler {
 		if parsed_host, _, err := net.SplitHostPort(r.Host); err == nil {
 			host = parsed_host
 		}
-		header.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
-				"script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "+
-				"frame-ancestors 'self' http://"+host+":* https://"+host+":*")
+		host = strings.Trim(host, "[]")
+		csp := "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+			"script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none';"
+		if host != "" && !strings.ContainsAny(host, "/\\ \t\r\n;\"'") {
+			csp += " frame-ancestors 'self' http://" + host + ":* https://" + host + ":*"
+		} else {
+			csp += " frame-ancestors 'self'"
+		}
+		header.Set("Content-Security-Policy", csp)
 
 		// 只有确实走进 TLS 才发 HSTS：明文监听上发 HSTS 会把用户自己锁在门外
 		if request_is_secure(r) {

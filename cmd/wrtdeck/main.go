@@ -302,7 +302,7 @@ func run(opts options) error {
 		if err != nil {
 			return fmt.Errorf("监听 %s 失败: %w", cfg.TLS.RedirectListen, err)
 		}
-		redirect_server = &http.Server{Handler: redirect_handler(cfg.Listen), ReadHeaderTimeout: 5 * time.Second}
+		redirect_server = &http.Server{Handler: redirect_handler(cfg.Listen, cfg.Auth.AllowedHosts), ReadHeaderTimeout: 5 * time.Second}
 		go func() {
 			if err := redirect_server.Serve(redirect_listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Printf("明文跳转监听退出: %v", err)
@@ -343,9 +343,8 @@ func run(opts options) error {
 	return http_server.Shutdown(shutdown_ctx)
 }
 
-// redirect_handler 把明文请求 308 跳到面板的 HTTPS 地址，主机名沿用请求里的，
-// 这样设备有多个地址时也不会把用户引到错误的名字上。
-func redirect_handler(tls_addr string) http.Handler {
+// redirect_handler 把明文请求 308 跳到面板的 HTTPS 地址，并校验主机名合法性
+func redirect_handler(tls_addr string, allowed_hosts []string) http.Handler {
 	_, tls_port, err := net.SplitHostPort(tls_addr)
 	if err != nil || tls_port == "" {
 		tls_port = "443"
@@ -355,13 +354,39 @@ func redirect_handler(tls_addr string) http.Handler {
 		if parsed_host, _, err := net.SplitHostPort(r.Host); err == nil {
 			host = parsed_host
 		}
-		if host == "" {
-			http.Error(w, "无法确定主机名", http.StatusBadRequest)
+		host = strings.Trim(host, "[]")
+		if host == "" || strings.ContainsAny(host, "/\\ \t\r\n;\"'") || !redirect_host_allowed(host, allowed_hosts) {
+			http.Error(w, "无法重定向到未受信任的主机名", http.StatusBadRequest)
 			return
 		}
 		http.Redirect(w, r, "https://"+net.JoinHostPort(host, tls_port)+r.URL.RequestURI(),
 			http.StatusPermanentRedirect)
 	})
+}
+
+// redirect_host_allowed 检查重定向目标主机名是否属于允许列表或本机地址
+func redirect_host_allowed(host string, allowed []string) bool {
+	if net.ParseIP(host) != nil || host == "localhost" {
+		return true
+	}
+	for _, item := range allowed {
+		target := strings.ToLower(strings.TrimSpace(item))
+		if target == "" {
+			continue
+		}
+		if target == strings.ToLower(host) || (strings.HasPrefix(target, "*.") && strings.HasSuffix(strings.ToLower(host), target[1:])) {
+			return true
+		}
+	}
+	for _, suffix := range []string{".lan", ".local", ".home", ".home.arpa", ".internal"} {
+		if strings.HasSuffix(strings.ToLower(host), suffix) {
+			return true
+		}
+	}
+	if name, err := os.Hostname(); err == nil && strings.EqualFold(name, host) {
+		return true
+	}
+	return false
 }
 
 // reset_password 重置登录口令，是设备主人忘记口令时唯一的找回手段。
@@ -397,96 +422,4 @@ func seed_demo(store *registry.Store, cfg *config.Config) error {
 	}
 	log.Printf("已写入 %d 条自检示例注册项", store.Count())
 	return nil
-}
-
-// banner 打印启动信息、访问地址与暴露面告警
-func banner(cfg *config.Config, opts options, secrets *config.Secrets, tls_result certs.Result) {
-	scheme := "http"
-	if tls_result.Enabled {
-		scheme = "https"
-	}
-	log.Printf("WrtDeck %s 启动中", version)
-	log.Printf("监听地址: %s://%s", scheme, cfg.Listen)
-	log.Printf("数据目录: %s", cfg.DataDir)
-	if cfg.Auth.Disabled {
-		log.Printf("鉴权状态: 已关闭（开发模式）")
-	} else {
-		log.Printf("鉴权状态: 已开启，口令登录 + API Token 双凭据，会话有效期 %s", cfg.Auth.SessionTTL())
-		if secrets.FromEnv() {
-			log.Printf("API Token: 来自环境变量 %s", cfg.Auth.TokenEnv)
-		} else {
-			log.Printf("API Token: 见 %s（/etc/init.d/wrtdeck token 可直接打印）", cfg.SecretsPath())
-		}
-		if secrets.MustChange() {
-			// 这里刻意把默认口令打出来：它本来就是写在文档与安装提示里的公开信息，
-			// 打印出来才能让用户第一眼就知道该改什么。
-			log.Printf("初始口令: 仍为 %q，请登录后立即修改（未修改前只允许内网登录）", config.DefaultPassword)
-		} else {
-			log.Printf("登录口令: 已于 %s 修改", secrets.PasswordUpdated().Format("2006-01-02 15:04"))
-		}
-		log.Printf("登录限速: 单来源 %d 次失败即锁定 %s，连续失败成倍延长",
-			cfg.Auth.MaxAttempts(), cfg.Auth.Lockout())
-	}
-
-	if tls_result.Enabled {
-		log.Printf("TLS: 已启用，证书 %s，SHA-256 指纹 %s", tls_result.CertFile, tls_result.Fingerprint)
-		if tls_result.SelfSigned {
-			log.Printf("TLS: 当前是自签证书，浏览器会提示不受信任；公网访问建议换正式证书或置于反向代理之后")
-		}
-	} else if !cfg.Auth.Disabled {
-		if listen_is_public(cfg.Listen) {
-			log.Printf("警告: 监听 %s 且未启用 TLS，口令与 Token 都是明文传输；"+
-				"要暴露到公网请配置 tls.cert_file / tls.key_file，或置于 HTTPS 反向代理之后", cfg.Listen)
-		} else {
-			log.Printf("TLS: 未启用（当前只监听本机地址）")
-		}
-	}
-
-	if cfg.Limits.HistoryLimit > 0 {
-		log.Printf("运行历史: 每个信息源保留 %d 条采样（仅内存）", cfg.Limits.HistoryLimit)
-	} else {
-		log.Printf("运行历史: 已关闭（limits.history_limit = 0）")
-	}
-	if opts.dev {
-		log.Printf("前端开发地址: http://127.0.0.1:5173")
-	}
-	log.Printf("可用传输: %v", transport.Names())
-	if !cfg.Exec.Enabled {
-		log.Printf("Exec 传输: 已禁用（默认关闭），启用需在配置中设置 exec.enabled")
-	}
-}
-
-// listen_is_public 判断监听地址是否超出了本机范围
-func listen_is_public(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return true
-	}
-	host = strings.Trim(host, "[]")
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip == nil || !ip.IsLoopback()
-}
-
-// local_listen 在开发模式下把监听地址收敛到回环地址
-func local_listen(addr string) string {
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "127.0.0.1:8080"
-	}
-	return net.JoinHostPort("127.0.0.1", port)
-}
-
-// local_hostport 把监听地址换成可被本机访问的地址，用于自检示例
-func local_hostport(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "127.0.0.1:8080"
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	return net.JoinHostPort(host, port)
 }

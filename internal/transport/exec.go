@@ -58,15 +58,41 @@ func (e *exec_transport) Do(ctx context.Context, spec registry.TransportSpec, op
 	return res, nil
 }
 
-// exec_allowed 判断目标程序是否命中 allowlist，空列表表示全部拒绝
+// insecure_dirs 定义禁止执行程序的临时与易写目录
+var insecure_dirs = []string{"/tmp", "/var/tmp", "/dev/shm", "/run", "/var/run"}
+
+// is_insecure_path 检查路径是否位于不安全的临时目录中
+func is_insecure_path(path string) bool {
+	clean := filepath.Clean(path)
+	for _, dir := range insecure_dirs {
+		if clean == dir || strings.HasPrefix(clean, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// exec_allowed 判断目标程序是否命中 allowlist，要求绝对路径或 PATH 系统命令匹配
 func exec_allowed(path string, allowlist []string) bool {
+	clean := filepath.Clean(path)
+	if is_insecure_path(clean) {
+		return false
+	}
 	for _, item := range allowlist {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
-		if item == path || item == filepath.Base(path) {
-			return true
+		if filepath.IsAbs(item) {
+			if filepath.Clean(item) == clean {
+				return true
+			}
+		} else {
+			if lp, err := exec.LookPath(item); err == nil {
+				if abs_lp, err := filepath.Abs(lp); err == nil && filepath.Clean(abs_lp) == clean {
+					return true
+				}
+			}
 		}
 	}
 	return false

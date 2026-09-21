@@ -33,7 +33,7 @@ if [ -z "${PKG_ARCH:-}" ]; then
     mipsle) PKG_ARCH="mipsel_24kc" ;;
     mips)   PKG_ARCH="mips_24kc" ;;
     *)
-      echo "未知的 GOARCH=$goarch，请显式设置 PKG_ARCH" >&2
+      echo "未知的 GOARCH=${goarch}，请显式设置 PKG_ARCH" >&2
       exit 1
       ;;
   esac
@@ -99,9 +99,9 @@ case "$format" in
     pack_ipk "$root/dist/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${PKG_ARCH}.ipk"
     ;;
   *)
-    echo "未知的 PKG_FORMAT=$format，可选 apk / ipk / both" >&2
+    echo "未知的 PKG_FORMAT=${format}，可选 apk / ipk / both" >&2
     exit 1
     ;;
 esac
 
-log_info package "打包完成（格式 $format，架构 $PKG_ARCH）"
+log_info package "打包完成（格式 ${format}，架构 ${PKG_ARCH}）"

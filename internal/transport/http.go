@@ -3,9 +3,11 @@ package transport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"wrtdeck/internal/registry"
@@ -16,9 +18,30 @@ type http_transport struct {
 	client *http.Client
 }
 
-// init 注册 HTTP 传输实现
+// init 注册 HTTP 传输实现并配置重定向防御
 func init() {
-	Register(&http_transport{client: &http.Client{}})
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("重定向次数过多")
+			}
+			if is_blocked_target(req.URL.String()) {
+				return errors.New("重定向目标受限，禁止访问云元数据端点")
+			}
+			return nil
+		},
+	}
+	Register(&http_transport{client: client})
+}
+
+// is_blocked_target 拦截针对云厂商元数据服务（169.254.169.254）的请求
+func is_blocked_target(target_url string) bool {
+	parsed, err := url.Parse(target_url)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	return host == "169.254.169.254" || strings.EqualFold(host, "instance-data")
 }
 
 // Type 返回传输名称
@@ -31,6 +54,9 @@ func (h *http_transport) Available() bool { return true }
 func (h *http_transport) Do(ctx context.Context, spec registry.TransportSpec, opts Options) (*Result, error) {
 	if spec.HTTP == nil {
 		return nil, fmt.Errorf("缺少 transport.http 配置")
+	}
+	if is_blocked_target(spec.HTTP.URL) {
+		return nil, fmt.Errorf("目标地址受限，禁止访问云元数据端点")
 	}
 	cfg := spec.HTTP
 	method := strings.ToUpper(strings.TrimSpace(cfg.Method))

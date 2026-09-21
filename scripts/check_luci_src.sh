@@ -129,7 +129,7 @@ check_luci_src() {
     if printf '%s\n' "$panel_code" | grep -q -F "$bad"; then
       ng "视图里出现 $bad：面板地址不该由浏览器端拼出来"
     else
-      ok "视图不出现 $bad（面板地址不由浏览器端拼）"
+      ok "视图不出现 ${bad}（面板地址不由浏览器端拼）"
     fi
   done
   for scheme in 'http://' 'https://'; do

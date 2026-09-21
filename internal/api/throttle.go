@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net"
 	"sync"
 	"time"
 )
@@ -19,7 +20,7 @@ const (
 	throttle_global_window = time.Minute
 	throttle_global_fails  = 50
 	throttle_global_lock   = time.Minute
-	// 表的大小上限，超过就整表重置，避免大量伪造来源把内存撑爆
+	// 表的大小上限，超限时逐出旧项，避免大量伪造来源把内存撑爆
 	throttle_max_sources = 1024
 )
 
@@ -58,8 +59,22 @@ func new_login_throttle(max int, lock_for time.Duration) *login_throttle {
 	return &login_throttle{by_ip: map[string]*attempt_record{}, max: max, lock_for: lock_for}
 }
 
+// normalize_source 归一化来源标识，IPv6 地址按 /64 网段聚合以抵御地址轮换
+func normalize_source(remote string) string {
+	ip := net.ParseIP(remote)
+	if ip == nil {
+		return remote
+	}
+	if ip.To4() != nil {
+		return ip.String()
+	}
+	mask := net.CIDRMask(64, 128)
+	return ip.Mask(mask).String() + "/64"
+}
+
 // Allow 判断该来源现在是否可以尝试登录，被拒时返回剩余等待时长
 func (t *login_throttle) Allow(remote string, now time.Time) (bool, time.Duration) {
+	remote = normalize_source(remote)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if now.Before(t.global.until) {
@@ -79,14 +94,38 @@ func (t *login_throttle) Allow(remote string, now time.Time) (bool, time.Duratio
 	return true, 0
 }
 
+// evict_oldest 淘汰一条记录，优先清理过期项，无法缩减时删最早记录，调用方必须已持锁
+func (t *login_throttle) evict_oldest(now time.Time) {
+	for key, record := range t.by_ip {
+		if now.After(record.blocked_until) && now.Sub(record.first_fail) > throttle_window {
+			delete(t.by_ip, key)
+		}
+	}
+	if len(t.by_ip) < throttle_max_sources {
+		return
+	}
+	var candidate string
+	var earliest time.Time
+	for key, record := range t.by_ip {
+		if candidate == "" || record.first_fail.Before(earliest) {
+			candidate = key
+			earliest = record.first_fail
+		}
+	}
+	if candidate != "" {
+		delete(t.by_ip, candidate)
+	}
+}
+
 // Fail 记录一次失败；达到阈值即锁定该来源，并返回锁定时长（未锁定为 0）
 func (t *login_throttle) Fail(remote string, now time.Time) time.Duration {
+	remote = normalize_source(remote)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.count_global(now)
 
 	if len(t.by_ip) >= throttle_max_sources {
-		t.by_ip = map[string]*attempt_record{}
+		t.evict_oldest(now)
 	}
 	record, ok := t.by_ip[remote]
 	if !ok {
@@ -115,6 +154,7 @@ func (t *login_throttle) Fail(remote string, now time.Time) time.Duration {
 
 // Succeed 在登录成功后清空该来源的失败记录
 func (t *login_throttle) Succeed(remote string) {
+	remote = normalize_source(remote)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.by_ip, remote)

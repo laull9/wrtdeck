@@ -39,7 +39,7 @@ case "$preset" in
 esac
 
 if [ -z "$ipk" ]; then
-  ipk="$(ls -1 "$root"/$glob 2>/dev/null | head -1)"
+  ipk="$(ls -1 "$root"/$glob 2>/dev/null | sort -V | tail -1)"
 fi
 if [ -z "$ipk" ] || [ ! -f "$ipk" ]; then
   echo "找不到 ipk，请先执行：make ipk / make luci" >&2
@@ -80,7 +80,7 @@ step() { printf '\n== %s ==\n' "$1"; }
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT INT TERM
 
-echo "被测文件: $ipk  （预设 $preset）"
+echo "被测文件: $ipk  （预设 ${preset}）"
 
 # ── 1. ar 归档结构 ─────────────────────────────────────────────────────────
 step "1. 归档结构"
@@ -268,4 +268,4 @@ printf '\n== 结果 ==\n  通过 %s 项，失败 %s 项\n' "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
   exit 1
 fi
-echo "  ipk 结构校验通过（$package_name，可执行 opkg install 安装）"
+echo "  ipk 结构校验通过（${package_name}，可执行 opkg install 安装）"

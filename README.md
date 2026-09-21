@@ -105,13 +105,18 @@ make clean          # 清理构建产物
 | 措施 | 说明 |
 | --- | --- |
 | 强制首改口令 | 未改口令前**只有私网/回环来源能登录**，且会话凭据只能调 `me` / `password` / `logout` |
-| 登录节流 | 同一来源连续失败达 `auth.max_login_attempts`（默认 5）后锁定，锁定时长按指数退避从 15 分钟翻倍至 1 小时上限；另有 50 次/分钟的全局限流兜底 |
-| 严格 CSP | `default-src 'self'`，`script-src 'self'`（无内联脚本）、`frame-ancestors` 放行同源与 LuCI |
+| 登录节流与淘汰 | 单来源连续失败达 `auth.max_login_attempts`（默认 5）后锁定，退避上限 1 小时；容量满时逐出旧项，防止爆破清空锁定表 |
+| IPv6 网段聚合 | IPv6 来源按 `/64` 网段归一聚合限速，防范多地址轮换绕过退避锁定 |
+| 可信反代支持 | 支持配置 `auth.trusted_proxies`；只信任指定反代发来的真实客户端 IP，避免公网单点爆破导致反代后全员 429 拒登 |
+| 严格 CSP | `default-src 'self'`，`script-src 'self'`（无内联脚本）、`frame-ancestors` 严格校验主机名后放行同源与 LuCI |
 | 安全响应头 | `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Permissions-Policy` 收窄；`/api/` 一律 `Cache-Control: no-store` |
+| Host 校验与重定向 | 启用 Host 白名单；明文 308 重定向严格校验目标主机，阻断开放重定向 |
+| 写接口 CSRF 防护 | 中间件对 POST / PUT / DELETE 操作强制验证同源（Origin / Referer） |
+| Exec 绝对路径与安全目录 | Exec 传输白名单强制绝对路径匹配，禁止在 `/tmp`、`/dev/shm` 等可写临时目录执行程序 |
+| 云元数据 SSRF 拦截 | 传输层默认阻断访问 `169.254.169.254` 云元数据服务 |
 | HSTS | 仅在启用 TLS 时下发 |
 | 可选 TLS | 自带证书或自动生成 ECDSA P-256 自签证书（10 年有效，落盘 `data_dir`）；启用后另起明文监听并 308 重定向 |
-| 反节流绕过 | 来源判定**刻意忽略 `X-Forwarded-For`**，避免攻击者伪造头绕过登录锁定 |
-| 代理感知 | 只认 `X-Forwarded-For` / `X-Forwarded-Host` / `X-Real-Ip` 这几个头**出现了没有**，不采信里面的值。经代理进来时来源一律不再当作设备本机，于是「登录码只能本机申请」「初始口令期间只许内网登录」不会被同源网关绕过 |
+| 代理感知 | 未配置可信代理时忽略转发头取值；经代理访问时不再当作设备本机，避免同源网关被外网直接冒充 |
 
 审计日志只记录来源与结果（`[auth]` 前缀），**绝不写入口令、Token 或交接码**。
 

@@ -27,7 +27,7 @@ case "$preset" in
 esac
 
 if [ -z "$apk" ]; then
-  apk="$(ls -1 "$root"/$glob 2>/dev/null | head -1)"
+  apk="$(ls -1 "$root"/$glob 2>/dev/null | sort -V | tail -1)"
 fi
 if [ -z "$apk" ] || [ ! -f "$apk" ]; then
   echo "找不到 apk，请先执行：make apk" >&2
@@ -107,7 +107,7 @@ if [ -f "$counts" ]; then
   pass=$((pass + py_pass))
   fail=$((fail + py_fail))
 elif [ "$py_status" -ne 0 ]; then
-  ng "结构断言脚本异常退出（退出码 $py_status）"
+  ng "结构断言脚本异常退出（退出码 ${py_status}）"
 fi
 
 # ── 薄壳：解出文件树，做与包格式无关的源码级断言 ────────────────────────────

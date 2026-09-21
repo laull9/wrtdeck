@@ -85,8 +85,10 @@ func (s *Server) Handler() http.Handler {
 
 	return middleware(mux,
 		with_logging,
+		s.with_host_validation,
 		s.with_security_headers,
 		func(next http.Handler) http.Handler { return with_cors(s.dev, next) },
+		s.with_csrf_protection,
 		func(next http.Handler) http.Handler { return with_limit(s.cfg.Limits.MaxRequestBytes, next) },
 		s.with_auth,
 	)

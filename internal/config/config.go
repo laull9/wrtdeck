@@ -12,7 +12,7 @@ import (
 
 // 内置默认值，与架构文档中的资源预算保持一致
 const (
-	default_listen            = "0.0.0.0:8080"
+	default_listen            = "127.0.0.1:8080"
 	default_source_workers    = 4
 	default_action_workers    = 4
 	default_min_interval_ms   = 1000
@@ -44,6 +44,10 @@ type AuthConfig struct {
 	MaxLoginAttempts int `json:"max_login_attempts,omitempty"`
 	// LockoutMinutes 是首次锁定的时长，连续失败会成倍延长
 	LockoutMinutes int `json:"lockout_minutes,omitempty"`
+	// TrustedProxies 是受信任的反向代理来源列表（支持 IP 或 CIDR）
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+	// AllowedHosts 是允许的 Host 域名列表
+	AllowedHosts []string `json:"allowed_hosts,omitempty"`
 }
 
 // TLSConfig 控制面板自身的 HTTPS。

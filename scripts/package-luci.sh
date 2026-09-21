@@ -82,9 +82,9 @@ case "$format" in
     pack_ipk "$root/dist/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${ipk_arch}.ipk"
     ;;
   *)
-    echo "未知的 PKG_FORMAT=$format，可选 apk / ipk / both" >&2
+    echo "未知的 PKG_FORMAT=${format}，可选 apk / ipk / both" >&2
     exit 1
     ;;
 esac
 
-log_info package "luci 薄壳打包完成（格式 $format）"
+log_info package "luci 薄壳打包完成（格式 ${format}）"

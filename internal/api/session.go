@@ -9,8 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,10 +161,10 @@ func (s *Server) handle_session_login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	remote := client_ip(r)
+	remote := s.client_ip(r)
 	now := time.Now()
 
-	if s.secrets.MustChange() && (arrived_via_proxy(r) || !is_private_addr(r.RemoteAddr)) {
+	if s.secrets.MustChange() && !s.is_private_request(r) {
 		audit("login.blocked", remote, "初始口令期间拒绝外网登录")
 		write_error(w, http.StatusForbidden, "setup_required",
 			"面板仍在使用初始口令，请先在同一局域网内登录并修改口令")
@@ -215,7 +213,7 @@ func (s *Server) handle_session_logout(w http.ResponseWriter, r *http.Request) {
 	ctx := auth_from(r)
 	if ctx.role == role_session {
 		s.sessions.revoke(ctx.token)
-		audit("logout", client_ip(r), "")
+		audit("logout", s.client_ip(r), "")
 	}
 	write_json(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -249,7 +247,7 @@ func (s *Server) handle_session_password(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	remote := client_ip(r)
+	remote := s.client_ip(r)
 	now := time.Now()
 	if ok, wait := s.logins.Allow(remote, now); !ok {
 		audit("password.throttled", remote, "")
@@ -308,7 +306,7 @@ func (s *Server) handle_session_handoff(w http.ResponseWriter, r *http.Request) 
 	// 「经过代理」这一条不能省：转发之后的 RemoteAddr 是代理自己的回环地址，
 	// 只看它的话，任何能碰到设备 Web 端口的人都能顺手换一张登录码。
 	if arrived_via_proxy(r) || !is_loopback_addr(r.RemoteAddr) {
-		audit("handoff.blocked", client_ip(r), "非本机直连来源")
+		audit("handoff.blocked", s.client_ip(r), "非本机直连来源")
 		write_error(w, http.StatusForbidden, "remote_not_allowed", "登录码只能由设备本机申请")
 		return
 	}
@@ -317,7 +315,7 @@ func (s *Server) handle_session_handoff(w http.ResponseWriter, r *http.Request) 
 		write_error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	audit("handoff.issued", client_ip(r), "")
+	audit("handoff.issued", s.client_ip(r), "")
 	write_json(w, http.StatusOK, handoff_response{Code: code, ExpiresIn: ttl})
 }
 
@@ -325,7 +323,7 @@ func (s *Server) handle_session_handoff(w http.ResponseWriter, r *http.Request) 
 // 与其它写接口一样要求同源：跨站页面既拿不到码，也不该能在这里发起请求。
 func (s *Server) handle_session_redeem(w http.ResponseWriter, r *http.Request) {
 	if ok, present := same_origin(r); !present || !ok {
-		audit("redeem.blocked", client_ip(r), same_origin_reason(present, ok))
+		audit("redeem.blocked", s.client_ip(r), same_origin_reason(present, ok))
 		write_error(w, http.StatusForbidden, "cross_origin", "请求不是来自面板自身页面，拒绝兑换登录码")
 		return
 	}
@@ -337,16 +335,16 @@ func (s *Server) handle_session_redeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.handoffs.redeem(strings.TrimSpace(body.Code)) {
-		audit("redeem.rejected", client_ip(r), "登录码无效或已过期")
+		audit("redeem.rejected", s.client_ip(r), "登录码无效或已过期")
 		write_error(w, http.StatusUnauthorized, "bad_code", "登录码无效或已过期，请重新进入面板")
 		return
 	}
-	token, ttl, err := s.sessions.issue(client_ip(r))
+	token, ttl, err := s.sessions.issue(s.client_ip(r))
 	if err != nil {
 		write_error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	audit("redeem.ok", client_ip(r), "")
+	audit("redeem.ok", s.client_ip(r), "")
 	write_json(w, http.StatusOK, session_response{
 		Token:              token,
 		ExpiresInS:         ttl,
@@ -355,136 +353,14 @@ func (s *Server) handle_session_redeem(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// same_origin 判断请求是否来自与服务同源的页面，第二个返回值为「是否存在来源头」。
-// 浏览器对 fetch 与表单提交都会带上 Origin，脚本无法改写它，因此可以当作可信来源标识。
-func same_origin(r *http.Request) (bool, bool) {
-	origin := request_origin(r)
-	if origin == "" {
-		return false, false
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" {
-		return false, true
-	}
-	return strings.EqualFold(parsed.Host, r.Host), true
+// client_ip 取得当前请求的来源客户端 IP
+func (s *Server) client_ip(r *http.Request) string {
+	return client_ip(r, s.cfg.Auth.TrustedProxies)
 }
 
-// same_origin_reason 把同源判断的结果翻译成一句可读的原因，便于审计日志定位
-func same_origin_reason(present, ok bool) string {
-	if !present {
-		return "缺少 Origin/Referer"
-	}
-	if !ok {
-		return "来源与服务不同源"
-	}
-	return ""
-}
-
-// request_origin 取出来源页面的 协议://主机，优先 Origin，退回 Referer
-func request_origin(r *http.Request) string {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		return origin
-	}
-	referer := r.Header.Get("Referer")
-	if referer == "" {
-		return ""
-	}
-	parsed, err := url.Parse(referer)
-	if err != nil {
-		return ""
-	}
-	return parsed.Scheme + "://" + parsed.Host
-}
-
-// host_is_local_name 判断 Host 是否指向本机：IP 字面量、localhost、本机名或常见本地域名
-func host_is_local_name(hostport string) bool {
-	host := strings.ToLower(hostport)
-	if parsed_host, _, err := net.SplitHostPort(hostport); err == nil {
-		host = strings.ToLower(parsed_host)
-	}
-	host = strings.Trim(host, "[]")
-	if host == "" {
-		return false
-	}
-	if net.ParseIP(host) != nil || host == "localhost" {
-		return true
-	}
-	if name, err := os.Hostname(); err == nil && name != "" {
-		name = strings.ToLower(name)
-		if host == name || strings.HasPrefix(host, name+".") {
-			return true
-		}
-	}
-	// 局域网内自建域名（dnsmasq 的 .lan、mDNS 的 .local 等）不可能被外部域名劫持，
-	// 因此可以信任；公网域名一律不认，DNS 重绑定正是靠公网域名实现的。
-	for _, suffix := range []string{".lan", ".local", ".home", ".home.arpa", ".internal"} {
-		if strings.HasSuffix(host, suffix) {
-			return true
-		}
-	}
-	return false
-}
-
-// proxy_headers 是反向代理会补上的来源标记。
-// 只看它们存在与否，不采信里面的内容：内容可以随手伪造，
-// 但「一个都没出现」这件事，直连的客户端伪造不出来。
-var proxy_headers = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Real-Ip"}
-
-// arrived_via_proxy 判断这次请求是否经由反向代理到达。
-//
-// 用来给「来源是不是设备本机」那几处判断加一道保险：经代理转发之后
-// RemoteAddr 一律显示为代理自己（常常就是回环），单看它会得出错误结论，
-// 于是本该只许本机做的事（申请登录码、用初始口令登录）就变成了对所有人开放。
-func arrived_via_proxy(r *http.Request) bool {
-	for _, name := range proxy_headers {
-		if strings.TrimSpace(r.Header.Get(name)) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// is_private_addr 判断来源地址是否属于私网或回环。
-// 注意只用于「初始口令期间禁止外网登录」这类判断，不做访问控制的分界线：
-// 反向代理后面所有请求的来源都是代理自身，不会因此被放行到不该放行的地方。
-func is_private_addr(remote string) bool {
-	ip := remote_ip(remote)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
-}
-
-// is_loopback_addr 判断来源地址是否为回环地址
-func is_loopback_addr(remote string) bool {
-	ip := remote_ip(remote)
-	return ip != nil && ip.IsLoopback()
-}
-
-// remote_ip 从 RemoteAddr 中解析出 IP，解析失败返回 nil
-func remote_ip(remote string) net.IP {
-	host, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		host = remote
-	}
-	return net.ParseIP(strings.Trim(host, "[]"))
-}
-
-// client_ip 取出用于限速与审计的来源标识。
-//
-// 刻意不读 X-Forwarded-For：那是个客户端可伪造的头，认了它等于把限速关掉。
-// 代价是反向代理后面所有用户共用一个来源标识，限速会一并收紧——宁可紧一点。
-func client_ip(r *http.Request) string {
-	if ip := remote_ip(r.RemoteAddr); ip != nil {
-		return ip.String()
-	}
-	return "unknown"
-}
-
-// human_wait 把等待时长写成便于阅读的中文
-func human_wait(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%d 秒", int(d.Seconds())+1)
-	}
-	return fmt.Sprintf("%d 分钟", int(d.Minutes())+1)
+// is_private_request 判断请求来源是否属于局域网或本机回环
+func (s *Server) is_private_request(r *http.Request) bool {
+	raw := s.client_ip(r)
+	ip := net.ParseIP(raw)
+	return is_private_ip(ip)
 }
