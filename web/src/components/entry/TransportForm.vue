@@ -173,11 +173,7 @@ function remove_arg(index: number): void {
 
     <!-- MQTT -->
     <template v-else-if="transport.type === 'mqtt'">
-      <FormField
-        label="工作模式"
-        :error="errors['transport.mqtt_mode']"
-        hint="同一个 Broker 只维护一条共享长连接，订阅型信息源由 Broker 主动推送"
-      >
+      <FormField label="工作模式" :error="errors['transport.mqtt_mode']">
         <ChoicePicker v-model="transport.mqtt_mode" :options="mqtt_modes" />
       </FormField>
 
@@ -276,7 +272,7 @@ function remove_arg(index: number): void {
         label="可执行文件"
         required
         :error="errors['transport.exec_executable']"
-        hint="必须是服务端 exec 白名单内的路径，否则执行会被拒绝"
+        hint="绝对路径，受高危命令黑名单拦截"
       >
         <input
           v-model="transport.exec_executable"
@@ -286,7 +282,7 @@ function remove_arg(index: number): void {
         />
       </FormField>
 
-      <FormField label="命令参数" hint="逐个填写，不需要加引号；支持模板变量">
+      <FormField label="命令参数" hint="支持模板变量">
         <div class="flex flex-col gap-2">
           <div v-for="(_, index) in transport.exec_args" :key="index" class="flex items-center gap-2">
             <input
@@ -301,8 +297,8 @@ function remove_arg(index: number): void {
         </div>
       </FormField>
 
-      <FormField label="超时（ms）" hint="留空或 0 使用服务端默认值">
-        <input v-model.number="transport.exec_timeout_ms" type="number" min="0" class="field readout" />
+      <FormField label="超时（ms）">
+        <input v-model.number="transport.exec_timeout_ms" type="number" min="0" class="field readout" placeholder="0 为默认" />
       </FormField>
     </template>
   </div>

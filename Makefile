@@ -8,7 +8,7 @@ SHELL := /bin/sh
 # 打包与交叉编译默认出正式版本号：包名、二进制内嵌版本、文档里的安装命令
 # 三者必须一致，否则用户按文档敲命令会找不到文件。开发期用 make dev，
 # 那条路径走 go run 并注入 dev，不受这里影响。
-VERSION ?= 1.0.4
+VERSION ?= 1.0.5
 GOARCH  ?= arm64
 
 .DEFAULT_GOAL := help
@@ -140,7 +140,7 @@ vet:
 
 # 全量检查
 check: vet
-	@cd web && (pnpm typecheck 2>/dev/null || corepack pnpm typecheck)
+	@cd web && (command -v pnpm >/dev/null && pnpm typecheck || /opt/homebrew/bin/pnpm typecheck || corepack pnpm typecheck)
 
 # 清理
 clean:

@@ -11,7 +11,6 @@ import {
 import { api } from '../../api'
 import type { Entry, EntryKind } from '../../types'
 import {
-  DEFAULT_INTERVAL_MS,
   EXTRACT_CHOICES,
   KIND_CHOICES,
   MIN_INTERVAL_MS,
@@ -200,13 +199,13 @@ async function save(): Promise<void> {
         <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <!-- 结构化表单 -->
           <div v-if="tab === 'form'" class="flex flex-col gap-4">
-            <FormSection title="基础信息" desc="ID 是注册项的唯一标识，也是接口路径的一部分。">
+            <FormSection title="基础信息">
               <div class="grid gap-3 sm:grid-cols-2">
                 <FormField
                   label="ID"
                   required
                   :error="errors.id"
-                  :hint="id_editable ? '只允许小写字母、数字、- 和 _' : '编辑时不可修改，如需改 ID 请新建后删除旧条目'"
+                  :hint="id_editable ? '小写字母、数字、- 和 _' : '不可修改'"
                 >
                   <input
                     v-model="draft.id"
@@ -216,7 +215,7 @@ async function save(): Promise<void> {
                     placeholder="livingroom-temp"
                   />
                 </FormField>
-                <FormField label="名称" required :error="errors.name" hint="显示在面板卡片或按钮上">
+                <FormField label="名称" required :error="errors.name">
                   <input v-model="draft.name" class="field" placeholder="客厅温度" />
                 </FormField>
               </div>
@@ -230,13 +229,13 @@ async function save(): Promise<void> {
               </FormField>
 
               <div class="grid gap-3 sm:grid-cols-2">
-                <FormField label="分组" hint="同组的信息源会归到面板上的同一个区块">
+                <FormField label="分组">
                   <input v-model="draft.group" class="field" list="wrtdeck-group-options" placeholder="未分组" />
                   <datalist id="wrtdeck-group-options">
                     <option v-for="name in groups" :key="name" :value="name"></option>
                   </datalist>
                 </FormField>
-                <FormField label="启用状态" hint="停用后不再调度，动作按钮也会被禁用">
+                <FormField label="启用状态">
                   <label class="flex items-center gap-2 text-base text-ink-body">
                     <input v-model="draft.enabled" type="checkbox" class="field-check" />
                     {{ draft.enabled ? '启用' : '停用' }}
@@ -246,35 +245,20 @@ async function save(): Promise<void> {
             </FormSection>
 
             <!-- 动作先声明参数，再在传输字段里引用 -->
-            <FormSection
-              v-if="draft.kind === 'action'"
-              title="运行参数"
-              desc="触发动作时由界面收集的入参，可在下面的传输字段里用 ${params.名称} 引用。"
-            >
+            <FormSection v-if="draft.kind === 'action'" title="运行参数">
               <ParamsForm :params="draft.params" :errors="errors" />
             </FormSection>
 
-            <FormSection
-              title="传输方式"
-              :desc="
-                draft.kind === 'source'
-                  ? '决定每次采集如何从设备取值。'
-                  : '决定点击按钮后如何把指令发给设备。'
-              "
-            >
+            <FormSection title="传输方式">
               <TransportForm :transport="draft.transport" :kind="draft.kind" :errors="errors" />
             </FormSection>
 
-            <FormSection
-              v-if="draft.kind === 'source'"
-              title="采集与取值"
-              desc="调度周期决定采集频率，取值规则决定从响应里挑出哪个值。"
-            >
+            <FormSection v-if="draft.kind === 'source'" title="采集与取值">
               <FormField
                 label="轮询间隔（ms）"
                 required
                 :error="errors.interval_ms"
-                :hint="`服务端最小间隔 ${MIN_INTERVAL_MS}ms，默认 ${DEFAULT_INTERVAL_MS}ms`"
+                :hint="`最小 ${MIN_INTERVAL_MS}ms`"
               >
                 <input
                   v-model.number="draft.interval_ms"
@@ -294,7 +278,7 @@ async function save(): Promise<void> {
                 label="JSON 路径"
                 required
                 :error="errors['extract.path']"
-                hint="点号分层，数组用下标，例如 data.items.0.value"
+                hint="例如 data.items.0.value"
               >
                 <input v-model="draft.extract.path" class="field readout" placeholder="server.uptime_s" />
               </FormField>
@@ -303,31 +287,26 @@ async function save(): Promise<void> {
                 <FormField label="正则表达式" required :error="errors['extract.pattern']">
                   <input v-model="draft.extract.pattern" class="field field-code" placeholder="temp=(\d+\.\d+)" />
                 </FormField>
-                <FormField label="捕获分组" hint="0 表示整个匹配">
+                <FormField label="捕获分组">
                   <input v-model.number="draft.extract.group" type="number" min="0" class="field readout" />
                 </FormField>
               </div>
 
-              <FormField label="取值类型" hint="决定前端如何格式化，自动推断时按原样展示">
+              <FormField label="取值类型">
                 <ChoicePicker v-model="draft.extract.value_type" :options="VALUE_TYPE_CHOICES" />
               </FormField>
             </FormSection>
 
-            <FormSection
-              title="展示方式"
-              :desc="
-                draft.kind === 'source' ? '决定这张卡片在面板上长什么样。' : '决定这个按钮在面板上的外观。'
-              "
-            >
+            <FormSection title="展示方式">
               <FormField v-if="draft.kind === 'source'" label="卡片形态">
                 <ChoicePicker v-model="draft.ui.type" :options="SOURCE_UI_CHOICES" />
               </FormField>
 
               <div v-if="draft.kind === 'source' && draft.ui.type === 'metric'" class="grid gap-3 sm:grid-cols-2">
-                <FormField label="单位" hint="显示在读数右侧，例如 °C、s、Mbps">
+                <FormField label="单位">
                   <input v-model="draft.ui.unit" class="field" placeholder="°C" />
                 </FormField>
-                <FormField label="小数位" hint="0 表示取整">
+                <FormField label="小数位">
                   <input v-model.number="draft.ui.precision" type="number" min="0" max="6" class="field readout" />
                 </FormField>
               </div>
@@ -336,16 +315,12 @@ async function save(): Promise<void> {
                 <ChoicePicker v-model="draft.ui.variant" :options="VARIANT_CHOICES" />
               </FormField>
 
-              <FormField label="排序权重" hint="数值越小越靠前，同组内按此排序">
+              <FormField label="排序权重">
                 <input v-model.number="draft.ui.order" type="number" class="field readout" />
               </FormField>
             </FormSection>
 
-            <FormSection
-              v-if="draft.kind === 'action'"
-              title="二次确认"
-              desc="开启后点击按钮会先弹窗确认，可用来拦住误触的不可逆操作。"
-            >
+            <FormSection v-if="draft.kind === 'action'" title="二次确认">
               <FormField label="启用确认">
                 <label class="flex items-center gap-2 text-base text-ink-body">
                   <input v-model="draft.ui.confirm_enabled" type="checkbox" class="field-check" />
@@ -353,11 +328,11 @@ async function save(): Promise<void> {
                 </label>
               </FormField>
               <div v-if="draft.ui.confirm_enabled" class="grid gap-3 sm:grid-cols-2">
-                <FormField label="弹窗标题" hint="留空则用注册项名称">
-                  <input v-model="draft.ui.confirm_title" class="field" placeholder="确认下发角度？" />
+                <FormField label="弹窗标题">
+                  <input v-model="draft.ui.confirm_title" class="field" placeholder="确认下发指令？" />
                 </FormField>
                 <FormField label="弹窗说明">
-                  <input v-model="draft.ui.confirm_message" class="field" placeholder="将向舵机控制器发送角度指令。" />
+                  <input v-model="draft.ui.confirm_message" class="field" placeholder="指令将立即发送到设备。" />
                 </FormField>
               </div>
             </FormSection>
@@ -365,9 +340,6 @@ async function save(): Promise<void> {
 
           <!-- JSON 高级编辑 -->
           <div v-else class="flex flex-col gap-3">
-            <p class="field-hint">
-              这里就是提交给 <code class="code-chip">PUT /api/v1/registry/{id}</code> 的原始报文，适合批量调整或复制配置。切回表单时会被重新解析。
-            </p>
             <textarea
               v-model="json_text"
               spellcheck="false"

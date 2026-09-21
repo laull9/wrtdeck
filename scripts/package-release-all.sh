@@ -2,7 +2,7 @@
 # 一次性打出所有目标架构的发布资产：二进制、apk、ipk、luci 薄壳与 sha256 校验清单。
 #
 # 用法：
-#   VERSION=1.0.4 sh scripts/package-release-all.sh
+#   VERSION=1.0.5 sh scripts/package-release-all.sh
 #   不传 VERSION 时自动从 Makefile 中提取。
 
 set -eu
@@ -17,7 +17,7 @@ if [ -z "$version" ]; then
 fi
 
 if [ -z "$version" ]; then
-  echo "无法推导版本号，请通过 VERSION=1.0.4 传入" >&2
+  echo "无法推导版本号，请通过 VERSION=1.0.5 传入" >&2
   exit 1
 fi
 

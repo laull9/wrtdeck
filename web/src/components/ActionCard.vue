@@ -109,8 +109,8 @@ async function run(): Promise<void> {
           <DialogTitle class="text-base font-semibold text-ink">
             {{ entry.ui.confirm?.title || entry.name }}
           </DialogTitle>
-          <DialogDescription class="mt-1 text-sm leading-relaxed text-ink-muted">
-            {{ entry.ui.confirm?.message || `将执行动作 ${entry.name}。` }}
+          <DialogDescription class="mt-1 text-xs text-ink-muted">
+            {{ entry.ui.confirm?.message || '确认执行？' }}
           </DialogDescription>
 
           <div v-if="param_list.length" class="mt-4 flex flex-col gap-3">

@@ -184,21 +184,17 @@ return view.extend({
 	renderNotReady: function(status, children) {
 		if (!status.installed) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '还没有安装 WrtDeck 面板本体（wrtdeck）。'),
-				E('p', {}, '可执行：', E('code', {}, 'apk add wrtdeck'),
-					'（24.10 及更早版本用 ', E('code', {}, 'opkg install wrtdeck'), '）')
+				E('p', {}, '未安装 WrtDeck 面板本体（wrtdeck）。请执行 apk add wrtdeck 或 opkg install wrtdeck')
 			]));
 			return E(children);
 		}
 		children.push(E('div', { 'class': 'alert-message warning' }, [
-			E('p', {}, '面板页面还没有就绪：设备上找不到 ',
-				E('code', {}, '/www/' + panel_dir + '/index.html'), '。'),
-			E('p', {}, '面板在本体启动时把页面导出到 Web 根目录，重启一次服务即可完成。')
+			E('p', {}, '面板页面未就绪，请重启服务。')
 		]));
 		children.push(E('button', {
 			'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, 'handleService', 'restart')
-		}, '重启 WrtDeck 并导出页面'));
+		}, '重启服务'));
 		return E(children);
 	},
 
@@ -208,15 +204,10 @@ return view.extend({
 		this.src = panel_src(status);
 
 		var children = [
-			E('h2', {}, 'WrtDeck'),
-			E('p', { 'class': 'cbi-map-descr' }, [
-				'设备控制面板，直接内嵌在本页里，与 LuCI 同一个地址、同一个端口，',
-				'加密方式也跟随 LuCI：', E('code', {}, window.location.origin), '。',
-				'从 LuCI 登录后进入不需要再输一次面板口令。'
-			])
+			E('h2', {}, 'WrtDeck')
 		];
 
-		// 面板页面没就绪时先把原因说清楚，不必让用户面对一个空白框
+		// 面板页面没就绪时提示重启
 		if (!status.installed || !status.web_ready) {
 			return this.renderNotReady(status, children);
 		}
@@ -238,46 +229,37 @@ return view.extend({
 
 		if (plaintext_risk()) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '当前通过明文 HTTP 访问这个域名，登录 LuCI 与使用面板的凭据都会在链路上明文传输。'),
-				E('p', {}, '面板不会自己另开端口、也不会另起一套证书，它的加密方式完全跟随 LuCI。',
-					'要让面板与 LuCI 一起走 HTTPS，请为 ', E('code', {}, '/etc/config/uhttpd'),
-					' 配置证书并打开 ', E('code', {}, 'redirect_https'), '，',
-					'或把整个 LuCI 放在 HTTPS 反向代理之后。')
+				E('p', {}, '当前连接未启用 HTTPS，建议配置证书保护传输安全。')
 			]));
 		}
 
 		if (status.password_pending) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '面板仍在使用初始口令。面板本体只监听本机地址、不对外开放，',
-					'但初始口令是公开信息，建议进入面板后立即修改。'),
-				E('p', {}, '忘记口令时可在设备上执行 ', E('code', {}, '/etc/init.d/wrtdeck password'), ' 重置。')
+				E('p', {}, '当前仍为初始口令，建议尽快修改。重置命令：', E('code', {}, '/etc/init.d/wrtdeck password'))
 			]));
 		}
 
 		if (!status.running) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '服务当前没有运行，面板页面与接口都不可达。'),
+				E('p', {}, '服务未运行。'),
 				E('button', {
 					'class': 'btn cbi-button cbi-button-apply',
 					'click': ui.createHandlerFn(this, 'handleService', 'start')
-				}, '启动 WrtDeck')
+				}, '启动服务')
 			]));
 			return E(children);
 		}
 
-		// 同源网关没就绪时面板仍能打开，只是进不去就说明是这条路断了
+		// 同源网关没就绪时提示
 		if (!status.gateway_ready) {
 			children.push(E('div', { 'class': 'alert-message warning' }, [
-				E('p', {}, '同源接口网关不在 Web 服务器的 CGI 前缀下，面板将无法自动进入。'),
-				E('p', {}, '安装脚本会按 ', E('code', {}, 'uhttpd.main.cgi_prefix'),
-					' 补一次入口；若仍不行，请确认该选项非空。')
+				E('p', {}, '接口网关未就绪，请检查 uhttpd cgi_prefix 配置。')
 			]));
 		}
 
 		if (credentials.reason) {
 			children.push(E('div', { 'class': 'alert-message notice' }, [
-				E('p', {}, '本次未能自动交接登录凭据：' + credentials.reason + '。'),
-				E('p', {}, '面板会改用 LuCI 的登录状态免登录进入；两条路都不成时，它会展示口令登录页。')
+				E('p', {}, '凭据交接：' + credentials.reason)
 			]));
 		}
 

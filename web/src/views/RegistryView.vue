@@ -136,9 +136,6 @@ onMounted(load)
     <div class="flex items-center gap-3">
       <div class="min-w-0">
         <h1 class="text-base font-semibold text-ink-strong">注册表</h1>
-        <p class="mt-0.5 text-sm text-ink-faint">
-          注册项就是数据模型本身，新增一条即可在面板上出现卡片或按钮，无需改前端代码。
-        </p>
       </div>
       <div class="ml-auto flex items-center gap-2">
         <button type="button" class="btn btn-outline" @click="load">刷新</button>

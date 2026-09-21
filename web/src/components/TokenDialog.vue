@@ -58,15 +58,10 @@ async function save(): Promise<void> {
       <DialogContent
         class="fixed left-1/2 top-1/2 z-50 w-[min(26rem,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-floating p-5 shadow-2xl"
       >
-        <DialogTitle class="text-base font-semibold text-ink">用 API Token 登录</DialogTitle>
-        <DialogDescription class="mt-1 text-sm leading-relaxed text-ink-muted">
-          这是给脚本与运维准备的长期凭据，不会过期。日常使用请用口令登录，
-          口令登录的会话可以随时登出，也不用担心凭据长期留在浏览器里。
+        <DialogTitle class="text-base font-semibold text-ink">API Token 登录</DialogTitle>
+        <DialogDescription class="mt-1 text-xs text-ink-muted">
+          在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck token</code> 获取
         </DialogDescription>
-
-        <p class="mt-3 text-sm leading-relaxed text-ink-muted">
-          获取方式：在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck token</code>。
-        </p>
 
         <input
           v-model="draft"

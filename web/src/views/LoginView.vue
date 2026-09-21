@@ -56,20 +56,16 @@ async function submit(): Promise<void> {
       </div>
 
       <form class="panel p-6" @submit.prevent="submit">
-        <h1 class="text-base font-semibold text-ink">登录面板</h1>
-        <p class="mt-1 text-sm leading-relaxed text-ink-muted">
-          输入设备上设置的口令。<span v-if="need_setup">当前还是初始口令，登录后必须立即更换。</span>
-        </p>
+        <h1 class="text-base font-semibold text-ink">登录</h1>
 
         <div
           v-if="need_setup"
-          class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+          class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
         >
-          初始口令是 <code class="code-chip">{{ default_password }}</code>，
-          改口令之前面板只处理改口令请求。
+          初始口令：<code class="code-chip">{{ default_password }}</code>，首次登录需修改
         </div>
 
-        <label class="field-label mt-4 block" for="login-password">登录口令</label>
+        <label class="field-label mt-4 block" for="login-password">口令</label>
         <div class="relative mt-1.5">
           <input
             id="login-password"
@@ -90,7 +86,7 @@ async function submit(): Promise<void> {
 
         <label class="mt-3 flex items-center gap-2 text-sm text-ink-muted">
           <input v-model="remember" type="checkbox" class="field-check" :disabled="busy" />
-          在本浏览器保持登录（有效期 {{ auth.session_ttl_minutes }} 分钟）
+          保持登录（{{ auth.session_ttl_minutes }} 分钟）
         </label>
 
         <p v-if="error" class="mt-3 text-sm leading-relaxed text-rose-600 dark:text-rose-400">
@@ -103,21 +99,19 @@ async function submit(): Promise<void> {
 
         <div class="mt-4 flex items-center justify-between gap-2 border-t border-line pt-3 text-sm">
           <button type="button" class="btn btn-ghost btn-sm" @click="token_open = true">
-            改用 API Token 登录
+            API Token 登录
           </button>
-          <span class="text-ink-ghost">忘记口令？</span>
         </div>
-        <p class="mt-1.5 text-sm leading-relaxed text-ink-faint">
-          在设备上执行 <code class="code-chip">/etc/init.d/wrtdeck password</code> 可重置口令。
+        <p class="mt-2 text-xs text-ink-faint">
+          重置口令：<code class="code-chip">/etc/init.d/wrtdeck password</code>
         </p>
       </form>
 
       <p
         v-if="!auth.tls"
-        class="mt-4 text-center text-sm leading-relaxed text-amber-700 dark:text-amber-500"
+        class="mt-3 text-center text-xs text-amber-600 dark:text-amber-400"
       >
-        当前连接未启用 HTTPS，口令会明文传输。局域网内可用，直接暴露到公网前请先配置
-        <code class="code-chip">tls</code> 或套一层反向代理。
+        未启用 HTTPS，请勿在非信任网络直接暴露
       </p>
     </div>
 

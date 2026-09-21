@@ -3,7 +3,7 @@
 面向 ARM64 / MIPS 等 OpenWrt 设备的安装说明。二进制为静态链接，不依赖设备上的 libc 版本。
 
 - 架构与设计：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 从源码构建：[从源码构建安装包](#从源码构建安装包)
+- 本地开发与源码构建：[DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ## 1. 前提
 
@@ -33,11 +33,11 @@ OpenWrt 25.12 起包格式已从 ipk 切换为 **apk**，24.10 及更早仍是 i
 ```sh
 # OpenWrt 25.12 及以上（apk）
 apk update                                              # 先取一次仓库索引，ca-bundle 要从仓库装
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk
 
 # OpenWrt 24.10 及更早（ipk）
 opkg update
-opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk
+opkg install ./wrtdeck_1.0.5-1_aarch64_cortex-a53.ipk
 ```
 
 > **本地包之间不会互相解析依赖**。`apk` / `opkg` 只在**仓库索引**与**已安装集合**里找依赖，
@@ -45,7 +45,7 @@ opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk
 > 因此**必须先装面板包，再装薄壳**（见下节）；或者把两个文件写在同一条命令里：
 >
 > ```sh
-> apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+> apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 > ```
 
 `post-install` 会自动 `enable` 并 `start` 服务，安装成功后会打印访问地址、默认口令与 Token 查看方式。
@@ -65,8 +65,8 @@ opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk
 先确认面板包已装好（`apk list -I | grep wrtdeck`），再装薄壳：
 
 ```sh
-apk add --allow-untrusted ./luci-app-wrtdeck-1.0.4-r1.apk   # apk 设备
-opkg install ./luci-app-wrtdeck_1.0.4-1_all.ipk             # ipk 设备
+apk add --allow-untrusted ./luci-app-wrtdeck-1.0.5-r1.apk   # apk 设备
+opkg install ./luci-app-wrtdeck_1.0.5-1_all.ipk             # ipk 设备
 ```
 
 薄壳只有 rpcd 后端、一个 LuCI 视图、一份菜单与一个 CGI 网关入口，不含二进制，因此与 CPU 架构无关。它声明了 `Depends: wrtdeck`，而 `wrtdeck` 不在任何仓库里，面板没装好时这一步必然失败，报 `wrtdeck (no such package)`。
@@ -413,14 +413,14 @@ curl -H "Authorization: Bearer $TOKEN" \
 只升级面板本体：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk           # apk 设备
-opkg install ./wrtdeck_1.0.4-1_aarch64_cortex-a53.ipk      # ipk 设备
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk           # apk 设备
+opkg install ./wrtdeck_1.0.5-1_aarch64_cortex-a53.ipk      # ipk 设备
 ```
 
 装了薄壳的话**两个包一起升**——薄壳负责同源网关与登录交接，两侧的约定是按版本对齐的：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 ```
 
 卸载：
@@ -437,26 +437,13 @@ opkg remove wrtdeck luci-app-wrtdeck        # ipk 设备
   - 你**改过**它 —— 你的那份被保留，新版落在旁边的 `config.json.apk-new`（apk）或 `config.json-opkg`（ipk）里，供你比对后自行合并。
 - 卸载后如需彻底清理：`rm -rf /etc/wrtdeck`。
 
-### 从 1.0.0 升级
+### 从 1.0.4 升级
 
-从 1.0.1 起有两处会让旧配置「看着正常、其实已经不是这个版本的形态」的变化，升级路径上会自动处理掉：
-
-| 变化 | 升级时会发生什么 |
-| --- | --- |
-| 面板默认监听从 `0.0.0.0:8080` 收敛到 `127.0.0.1:8080`，对外统一走 LuCI 那个源 | `listen` 仍是旧的出厂默认值时，安装脚本自动改成 `127.0.0.1:8080`，并在原配置旁留一份 `config.json.pre-1.0.1` 备份。你自己写过的地址**不会**被改，只在安装输出里提示一句风险 |
-| 面板页面改由设备 Web 服务器从 `/www/wrtdeck/` 提供，接口走同源 CGI | 面板启动时自动把页面导出过去；薄壳的安装钩子按设备实际的 `cgi_prefix` 补一个网关入口，并重启 rpcd、清掉 LuCI 菜单缓存 |
-
-装完建议确认三件事：
+1.0.5 精简了界面辅助文案与配置说明，调整了文档结构，直接覆盖安装即可：
 
 ```sh
-grep listen /etc/wrtdeck/config.json    # 应为 127.0.0.1:8080，除非你故意改过
-ls -l /www/wrtdeck/index.html           # 面板页面是否就位
-ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 ```
-
-页面缺失而服务在跑时，执行 `/etc/init.d/wrtdeck export_web` 重新导出；网关入口缺失时，按设备实际的 `cgi_prefix` 补一条软链，或者 `/etc/init.d/wrtdeck restart` 让钩子重新跑一遍。
-
-> LuCI 里点进去是个**空白框**，几乎只有一个原因：两个包版本不一致。页面是面板本体启动时导出的，只升薄壳不升面板时那个文件根本不存在。两个包一起升。
 
 ### 从 1.0.3 升级
 
@@ -471,7 +458,7 @@ ls -l /www/cgi-bin/wrtdeck-api          # 同源网关入口是否就位
 升级命令：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 ```
 
 ### 从 1.0.2 升级
@@ -491,7 +478,7 @@ apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
 升级命令：
 
 ```sh
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 ```
 
 ### 从 1.0.1 升级
@@ -522,7 +509,7 @@ apk add --allow-untrusted ./wrtdeck-1.0.2-r1.apk ./luci-app-wrtdeck-1.0.2-r1.apk
 /etc/init.d/owdash stop
 apk del owdash luci-app-wrtdeck            # 或 opkg remove owdash luci-app-wrtdeck
 mv /etc/owdash /etc/wrtdeck                # 想保留口令、Token 与注册项时必须做这一步
-apk add --allow-untrusted ./wrtdeck-1.0.4-r1.apk ./luci-app-wrtdeck-1.0.4-r1.apk
+apk add --allow-untrusted ./wrtdeck-1.0.5-r1.apk ./luci-app-wrtdeck-1.0.5-r1.apk
 ```
 
 - 不迁移 `/etc/owdash` 也能启动，但会当成全新安装：初始口令回到 `admin`，API Token 重新生成。
@@ -542,10 +529,10 @@ make luci                                           # 只要薄壳（与架构�
 GOARCH=arm     make apk                             # ARMv7
 GOARCH=amd64   make apk                             # x86_64
 GOARCH=mipsle  make ipk                             # MIPS 小端
-VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.4-r1
+VERSION=1.2.0 PKG_RELEASE=2 make packages            # 指定版本；默认 1.0.5-r1
 ```
 
-版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.4`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
+版本号只在 `Makefile` 里定义一处（`VERSION ?= 1.0.5`），打包脚本与二进制内嵌版本都由它下发，因此包名、`wrtdeck -version` 与本文档里的安装命令三者必然一致。开发期用 `make dev`，那条路径不注入版本，二进制会如实报 `dev`。
 
 产物在 `dist/`：
 

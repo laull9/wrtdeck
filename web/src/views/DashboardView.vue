@@ -31,17 +31,6 @@ const live_label = computed(() => {
   }
 })
 
-// 通道说明：把「浏览器到底怎么拿到状态」讲清楚，排障时能少问一轮
-const live_detail = computed(() => {
-  switch (props.live) {
-    case 'sse':
-      return '状态由服务端调度器主动下发，浏览器不直接访问设备'
-    case 'poll':
-      return '面板被 LuCI 内嵌或长连接送不出事件时走的通道，页面切到后台会暂停'
-    default:
-      return '可以点右侧按钮手动重新拉取'
-  }
-})
 
 // 按 group 分组，保持后端给出的顺序
 const groups = computed(() => {
@@ -64,12 +53,9 @@ const enabled_actions = computed(() => props.actions.filter((item) => item.enabl
 
 <template>
   <div class="flex flex-col gap-7">
-    <section v-if="sources.length === 0" class="panel flex flex-col items-center gap-3 px-6 py-10 text-center">
-      <img :src="logo_url" alt="WrtDeck" class="h-16 w-16" />
-      <p class="text-base text-ink-body">注册表里还没有信息源。</p>
-      <p class="text-sm text-ink-faint">
-        切换到「注册表」页签新增一条 source，或者重启服务并加上 <code class="code-chip">-seed-demo</code> 写入自检示例。
-      </p>
+    <section v-if="sources.length === 0" class="panel flex flex-col items-center gap-2 px-6 py-10 text-center">
+      <img :src="logo_url" alt="WrtDeck" class="h-12 w-12 opacity-80" />
+      <p class="text-sm text-ink-faint">暂无信息源</p>
     </section>
 
     <section v-for="group in groups" :key="group.name" class="flex flex-col gap-3">
@@ -103,14 +89,13 @@ const enabled_actions = computed(() => props.actions.filter((item) => item.enabl
     </section>
 
     <section class="panel flex items-center justify-between gap-4 px-4 py-3 text-sm text-ink-faint">
-      <span>
-        实时通道
+      <span class="inline-flex items-center gap-1.5">
+        <span>实时通道：</span>
         <span :class="props.live === 'off' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'">
           {{ live_label }}
         </span>
-        ，{{ live_detail }}
       </span>
-      <button type="button" class="btn btn-outline btn-sm" @click="emit('reload')">重新拉取</button>
+      <button type="button" class="btn btn-outline btn-sm" @click="emit('reload')">刷新</button>
     </section>
   </div>
 </template>

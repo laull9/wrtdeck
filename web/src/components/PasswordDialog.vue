@@ -83,13 +83,8 @@ async function submit(): Promise<void> {
         <DialogTitle class="text-base font-semibold text-ink">
           {{ props.forced ? '请先修改初始口令' : '修改登录口令' }}
         </DialogTitle>
-        <DialogDescription class="mt-1 text-sm leading-relaxed text-ink-muted">
-          <template v-if="props.forced">
-            设备出厂口令是公开信息，任何人扫到端口都能试着登进来。改完之后面板才会响应其它请求。
-          </template>
-          <template v-else>
-            修改成功后，其它设备与浏览器上的登录会立即失效，需要用新口令重新登录。
-          </template>
+        <DialogDescription class="mt-1 text-xs text-ink-muted">
+          {{ props.forced ? '首次使用必须修改初始口令' : '修改后需重新登录' }}
         </DialogDescription>
 
         <label class="field-label mt-4 block" for="pw-current">当前口令</label>
